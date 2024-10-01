@@ -333,6 +333,7 @@ dependencies = [
 ]
 modules = [
 	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend"},
+	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.engagement_metrics"},
 	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.risk_modeling"},
 	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_in"},
 	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_up"}

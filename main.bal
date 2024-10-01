@@ -3,6 +3,12 @@ import stakeholder_management_backend.risk_modeling;
 import ballerina/data.jsondata;
 import stakeholder_management_backend.engagement_metrics;
 
+@http:ServiceConfig {
+    cors: {
+        allowOrigins: ["http://localhost:3000"],
+        allowMethods: ["GET", "POST", "OPTIONS"]
+    }
+}
 service /api on new http:Listener(9091) {
 
     final http:Client metricsAPIClient;
