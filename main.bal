@@ -2,13 +2,29 @@ import ballerina/http;
 import stakeholder_management_backend.risk_modeling;
 import ballerina/data.jsondata;
 import stakeholder_management_backend.engagement_metrics;
+import ballerina/sql;
+import ballerinax/java.jdbc;
+import ballerinax/mysql.driver as _;
+import ballerina/io;
+import ballerina/log;
+
+@http:ServiceConfig {
+    cors: {
+        allowOrigins: ["http://localhost:3000"],
+        allowMethods: ["GET", "POST", "OPTIONS"],
+        allowHeaders: ["Content-Type"]
+    }
+}
 
 service /api on new http:Listener(9091) {
 
     final http:Client metricsAPIClient;
+    final sql:Client dbClient;
 
     function init() returns error? {
         self.metricsAPIClient = check new("http://localhost:9090/stakeholder-analytics");
+        self.dbClient = check new jdbc:Client(jdbcUrl);
+        check initDatabase(self.dbClient);
     }
 
     //risk score
@@ -125,5 +141,104 @@ service /api on new http:Listener(9091) {
             check caller->respond(response);
 
         }
+    }
+
+    resource function get googleLogin(http:Caller caller, http:Request req) returns error? {
+        http:Response redirectResponse = new;
+        redirectResponse.setHeader("Location", authorizationUrl);
+        redirectResponse.statusCode = http:REDIRECT_FOUND_302;
+        check caller->respond(redirectResponse);
+    }
+
+    // Callback route to handle Google OAuth2 response
+    resource function get callback(http:Caller caller, http:Request req) returns error? {
+        // Retrieve the "code" query parameter from the callback URL
+        string? authCode = req.getQueryParamValue("code");
+        if authCode is string {
+            log:printInfo("Received authorization code: " + authCode);
+
+            // Request the access token using the authorization code
+            http:Request tokenRequest = new;
+            tokenRequest.setHeader("Content-Type", "application/x-www-form-urlencoded");
+
+            map<string> body = {
+                "code": authCode,
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "redirect_uri": REDIRECT_URI,
+                "grant_type": "authorization_code"
+            };
+
+            tokenRequest.setPayload(body);
+
+            // Send the request to the token endpoint
+            http:Client tokenClient = check new (TOKEN_URL);
+            http:Response|error tokenResponse = tokenClient->post("", tokenRequest);
+
+            if tokenResponse is http:Response {
+                json|error jsonResponse = tokenResponse.getJsonPayload();
+                if jsonResponse is json {
+                    string accessToken = (check jsonResponse.access_token).toString();
+                    log:printInfo("Access Token: " + accessToken);
+
+                    // Get user email using the access token
+                    string email = check getEmailFromAccessToken(accessToken);
+                    log:printInfo("User email: " + email);
+
+                    // Verify user existence in the database
+                    if email != "" && self.checkUserExists(email) {
+                        check caller->respond("User successfully authenticated!");
+                    } else {
+                        check caller->respond("User does not exist. Please sign up.");
+                    }
+                }
+            }
+        } else {
+            // Respond with an error message if the "code" query parameter is not present
+            check caller->respond("Authorization failed!");
+        }
+    }
+
+    resource function post signup(http:Caller caller, Users users) returns error? {
+        sql:ExecutionResult _ = check self.dbClient->execute(signupParameterizedQuery(users));
+        check caller->respond("Sign up successful");
+    }
+
+    resource function post signIn(http:Caller caller, SignInInput signInInput) returns error? {
+        boolean isAuthenticated = check self.authenticateUser(signInInput.email, signInInput.password);
+        if isAuthenticated {
+            string responseText = "Successfully authenticated! Redirecting to home...";
+            check caller->respond(responseText);
+        } else {
+            check caller->respond("Invalid email or password!");
+        }
+
+    }
+
+    function checkUserExists(string email) returns boolean {
+        stream<record {}, sql:Error?> resultStream = self.dbClient->query(`SELECT username FROM users WHERE email = ${email}`);
+        do {
+            record {}? result = check resultStream.next();
+
+            if result is record {} {
+                return true;
+            }
+        } on fail var e {
+            log:printInfo("Invalid result stream: " + e.toString());
+            return false;
+        }
+        return false;
+    }
+
+    function authenticateUser(string email, string password) returns boolean|sql:Error {
+        stream<record {}, sql:Error?> resultStream = self.dbClient->query(`SELECT username FROM users WHERE email = ${email} AND password = ${password}`);
+
+        record {}? result = check resultStream.next();
+        io:println("record:" + result.toString());
+        if result is record {} {
+            io:println("Count value: ");
+            return true;
+        }
+        return false;
     }
 }
