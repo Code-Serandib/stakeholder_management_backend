@@ -15,7 +15,6 @@ import ballerina/log;
         allowHeaders: ["Content-Type"]
     }
 }
-
 service /api on new http:Listener(9091) {
 
     final http:Client metricsAPIClient;
