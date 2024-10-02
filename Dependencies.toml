@@ -8,6 +8,32 @@ dependencies-toml-version = "2"
 distribution-version = "2201.10.0"
 
 [[package]]
+org = "CODE_SERANDIB"
+name = "stakeholder_management_backend"
+version = "0.1.0"
+dependencies = [
+	{org = "ballerina", name = "http"},
+	{org = "ballerina", name = "io"},
+	{org = "ballerina", name = "jballerina.java"},
+	{org = "ballerina", name = "persist"},
+	{org = "ballerina", name = "sql"},
+	{org = "ballerina", name = "test"},
+	{org = "ballerina", name = "time"},
+	{org = "ballerinai", name = "observe"},
+	{org = "ballerinax", name = "mysql"},
+	{org = "ballerinax", name = "mysql.driver"},
+	{org = "ballerinax", name = "persist.sql"}
+]
+modules = [
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.engagement_metrics"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.risk_modeling"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_in"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_up"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.store"}
+]
+
+[[package]]
 org = "ballerina"
 name = "auth"
 version = "2.12.0"
@@ -45,18 +71,6 @@ version = "2.7.2"
 dependencies = [
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "time"}
-]
-
-[[package]]
-org = "ballerina"
-name = "data.jsondata"
-version = "0.2.0"
-dependencies = [
-	{org = "ballerina", name = "jballerina.java"},
-	{org = "ballerina", name = "lang.object"}
-]
-modules = [
-	{org = "ballerina", packageName = "data.jsondata", moduleName = "data.jsondata"}
 ]
 
 [[package]]
@@ -118,6 +132,9 @@ modules = [
 org = "ballerina"
 name = "jballerina.java"
 version = "0.0.0"
+modules = [
+	{org = "ballerina", packageName = "jballerina.java", moduleName = "jballerina.java"}
+]
 
 [[package]]
 org = "ballerina"
@@ -271,6 +288,31 @@ dependencies = [
 
 [[package]]
 org = "ballerina"
+name = "persist"
+version = "1.4.0"
+dependencies = [
+	{org = "ballerina", name = "jballerina.java"}
+]
+modules = [
+	{org = "ballerina", packageName = "persist", moduleName = "persist"}
+]
+
+[[package]]
+org = "ballerina"
+name = "sql"
+version = "1.14.1"
+dependencies = [
+	{org = "ballerina", name = "io"},
+	{org = "ballerina", name = "jballerina.java"},
+	{org = "ballerina", name = "lang.object"},
+	{org = "ballerina", name = "time"}
+]
+modules = [
+	{org = "ballerina", packageName = "sql", moduleName = "sql"}
+]
+
+[[package]]
+org = "ballerina"
 name = "task"
 version = "2.5.0"
 dependencies = [
@@ -299,6 +341,9 @@ version = "2.5.0"
 dependencies = [
 	{org = "ballerina", name = "jballerina.java"}
 ]
+modules = [
+	{org = "ballerina", packageName = "time", moduleName = "time"}
+]
 
 [[package]]
 org = "ballerina"
@@ -321,21 +366,40 @@ modules = [
 ]
 
 [[package]]
-org = "oshada_kavintha"
-name = "stakeholder_management_backend"
-version = "0.1.0"
+org = "ballerinax"
+name = "mysql"
+version = "1.13.1"
 dependencies = [
-	{org = "ballerina", name = "data.jsondata"},
-	{org = "ballerina", name = "http"},
+	{org = "ballerina", name = "crypto"},
 	{org = "ballerina", name = "io"},
-	{org = "ballerina", name = "test"},
-	{org = "ballerinai", name = "observe"}
+	{org = "ballerina", name = "jballerina.java"},
+	{org = "ballerina", name = "sql"},
+	{org = "ballerina", name = "time"}
 ]
 modules = [
-	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend"},
-	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.engagement_metrics"},
-	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.risk_modeling"},
-	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_in"},
-	{org = "oshada_kavintha", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_up"}
+	{org = "ballerinax", packageName = "mysql", moduleName = "mysql"}
+]
+
+[[package]]
+org = "ballerinax"
+name = "mysql.driver"
+version = "1.7.0"
+modules = [
+	{org = "ballerinax", packageName = "mysql.driver", moduleName = "mysql.driver"}
+]
+
+[[package]]
+org = "ballerinax"
+name = "persist.sql"
+version = "1.4.0"
+dependencies = [
+	{org = "ballerina", name = "jballerina.java"},
+	{org = "ballerina", name = "log"},
+	{org = "ballerina", name = "persist"},
+	{org = "ballerina", name = "sql"},
+	{org = "ballerina", name = "time"}
+]
+modules = [
+	{org = "ballerinax", packageName = "persist.sql", moduleName = "persist.sql"}
 ]
 
