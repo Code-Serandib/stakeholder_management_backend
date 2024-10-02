@@ -17,7 +17,6 @@ function initDatabase(sql:Client dbClient) returns error? {
                                     username VARCHAR(50) NOT NULL,
                                     password VARCHAR(100) NOT NULL,
                                     email VARCHAR(100) PRIMARY KEY NOT NULL,
-                                    access_token VARCHAR(255) NOT NULL,
                                     organizationName VARCHAR(70),
                                     organizationType VARCHAR(50),
                                     industry VARCHAR(50),
