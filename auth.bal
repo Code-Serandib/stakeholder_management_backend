@@ -37,12 +37,10 @@ function getEmailFromAccessToken(string accessToken) returns string|error {
     http:Request req = new;
     req.setHeader("Authorization", "Bearer " + accessToken);
 
-    // Set the Authorization header directly in the GET request
     map<string|string[]> headers = {
         "Authorization": "Bearer " + accessToken
     };
 
-    // Send a GET request to the user info endpoint
     http:Response|error response = googleClient->get("/oauth2/v2/userinfo", headers);
     if response is http:Response {
         // Parse the response payload

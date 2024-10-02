@@ -7,12 +7,14 @@ import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
 import ballerina/io;
 import ballerina/log;
+import ballerina/jwt;
 
 @http:ServiceConfig {
     cors: {
         allowOrigins: ["http://localhost:3000"],
         allowMethods: ["GET", "POST", "OPTIONS"],
-        allowHeaders: ["Content-Type"]
+        allowHeaders: ["Authorization", "Content-Type"],
+        allowCredentials: true
     }
 }
 service /api on new http:Listener(9091) {
@@ -151,12 +153,10 @@ service /api on new http:Listener(9091) {
 
     // Callback route to handle Google OAuth2 response
     resource function get callback(http:Caller caller, http:Request req) returns error? {
-        // Retrieve the "code" query parameter from the callback URL
         string? authCode = req.getQueryParamValue("code");
         if authCode is string {
             log:printInfo("Received authorization code: " + authCode);
 
-            // Request the access token using the authorization code
             http:Request tokenRequest = new;
             tokenRequest.setHeader("Content-Type", "application/x-www-form-urlencoded");
 
@@ -170,7 +170,6 @@ service /api on new http:Listener(9091) {
 
             tokenRequest.setPayload(body);
 
-            // Send the request to the token endpoint
             http:Client tokenClient = check new (TOKEN_URL);
             http:Response|error tokenResponse = tokenClient->post("", tokenRequest);
 
@@ -180,11 +179,9 @@ service /api on new http:Listener(9091) {
                     string accessToken = (check jsonResponse.access_token).toString();
                     log:printInfo("Access Token: " + accessToken);
 
-                    // Get user email using the access token
                     string email = check getEmailFromAccessToken(accessToken);
                     log:printInfo("User email: " + email);
 
-                    // Verify user existence in the database
                     if email != "" && self.checkUserExists(email) {
                         check caller->respond("User successfully authenticated!");
                     } else {
@@ -193,7 +190,6 @@ service /api on new http:Listener(9091) {
                 }
             }
         } else {
-            // Respond with an error message if the "code" query parameter is not present
             check caller->respond("Authorization failed!");
         }
     }
@@ -206,12 +202,37 @@ service /api on new http:Listener(9091) {
     resource function post signIn(http:Caller caller, SignInInput signInInput) returns error? {
         boolean isAuthenticated = check self.authenticateUser(signInInput.email, signInInput.password);
         if isAuthenticated {
-            string responseText = "Successfully authenticated! Redirecting to home...";
-            check caller->respond(responseText);
+            string jwtToken = check self.generateJwtToken(signInInput.email);
+            json responseBody = {"message": "Successfully authenticated!", "token": jwtToken};
+            check caller->respond(responseBody);
         } else {
             check caller->respond("Invalid email or password!");
         }
 
+    }
+
+    @http:ResourceConfig {
+        auth: [
+            {
+                jwtValidatorConfig: {
+                    issuer: "codeserandib",
+                    audience: "users",
+                    signatureConfig: {
+                        certFile: "resources/codeserandib.crt"
+                    }
+                }
+            }
+        ]
+    }
+    resource function get validateToken(http:Caller caller, http:Request req) returns error? {
+        var token = req.getHeader("Authorization");
+        if token is string {
+            io:println("Received token: " + token);
+        } else {
+            io:println("Token is missing in the request header.");
+            check caller->respond("Missing Authorization header");
+        }
+        check caller->respond("valid token");
     }
 
     function checkUserExists(string email) returns boolean {
@@ -239,5 +260,24 @@ service /api on new http:Listener(9091) {
             return true;
         }
         return false;
+    }
+
+    // Generate a JWT token with user claims
+    isolated function generateJwtToken(string email) returns string|error {
+        jwt:IssuerConfig issuerConfig = {
+            username: "codeserandib",
+            issuer: "codeserandib",
+            audience: "users",
+            expTime: 3600,
+            signatureConfig: {
+                config: {
+                    keyFile: "resources/codeserandib.key",
+                    keyPassword: ""
+                }
+            }
+        };
+
+        string jwtToken = check jwt:issue(issuerConfig);
+        return jwtToken;
     }
 }
