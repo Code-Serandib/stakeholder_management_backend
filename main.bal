@@ -1,12 +1,14 @@
-import ballerina/http;
-import stakeholder_management_backend.risk_modeling;
-import ballerina/data.jsondata;
 import stakeholder_management_backend.engagement_metrics;
+import stakeholder_management_backend.meetings;
+import stakeholder_management_backend.risk_modeling;
+
+import ballerina/data.jsondata;
+import ballerina/http;
+import ballerina/io;
+import ballerina/log;
 import ballerina/sql;
 import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
-import ballerina/io;
-import ballerina/log;
 
 @http:ServiceConfig {
     cors: {
@@ -21,7 +23,7 @@ service /api on new http:Listener(9091) {
     final sql:Client dbClient;
 
     function init() returns error? {
-        self.metricsAPIClient = check new("http://localhost:9090/stakeholder-analytics");
+        self.metricsAPIClient = check new ("http://localhost:9090/stakeholder-analytics");
         self.dbClient = check new jdbc:Client(jdbcUrl);
         check initDatabase(self.dbClient);
     }
@@ -31,14 +33,14 @@ service /api on new http:Listener(9091) {
 
         json|error? riskScore = risk_modeling:calculateRiskScore(self.metricsAPIClient, riskInput);
 
-        if riskScore is json{
+        if riskScore is json {
 
-            json response = { "riskScore": riskScore };
+            json response = {"riskScore": riskScore};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": riskScore.message()};
+            json response = {"error": riskScore.message()};
             check caller->respond(response);
 
         }
@@ -53,14 +55,14 @@ service /api on new http:Listener(9091) {
 
         json|error? projectRisk = risk_modeling:calculateProjectRisk(self.metricsAPIClient, riskInputs, influences);
 
-        if projectRisk is json{
+        if projectRisk is json {
 
-            json response = { "projectRisk": projectRisk };
+            json response = {"projectRisk": projectRisk};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": projectRisk.message()};
+            json response = {"error": projectRisk.message()};
             check caller->respond(response);
 
         }
@@ -75,14 +77,14 @@ service /api on new http:Listener(9091) {
 
         json|error? engagementDropAlerts = risk_modeling:engagementDropAlert(self.metricsAPIClient, riskInputs, engamenetTreshold);
 
-        if engagementDropAlerts is json{
+        if engagementDropAlerts is json {
 
-            json response = { "engagementDropAlerts": engagementDropAlerts };
+            json response = {"engagementDropAlerts": engagementDropAlerts};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": engagementDropAlerts.message()};
+            json response = {"error": engagementDropAlerts.message()};
             check caller->respond(response);
 
         }
@@ -93,14 +95,14 @@ service /api on new http:Listener(9091) {
 
         json|error? Eps = engagement_metrics:calculateEps(self.metricsAPIClient, epsInput);
 
-        if Eps is json{
+        if Eps is json {
 
-            json response = { "EpsResult": Eps };
+            json response = {"EpsResult": Eps};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": Eps.message()};
+            json response = {"error": Eps.message()};
             check caller->respond(response);
 
         }
@@ -111,14 +113,14 @@ service /api on new http:Listener(9091) {
 
         json|error? Bsc = engagement_metrics:calculateBsc(self.metricsAPIClient, bscInput);
 
-        if Bsc is json{
+        if Bsc is json {
 
-            json response = { "BscResult": Bsc };
+            json response = {"BscResult": Bsc};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": Bsc.message()};
+            json response = {"error": Bsc.message()};
             check caller->respond(response);
 
         }
@@ -129,18 +131,49 @@ service /api on new http:Listener(9091) {
 
         json|error? Tsc = engagement_metrics:calculateTes(self.metricsAPIClient, tesInput);
 
-        if Tsc is json{
+        if Tsc is json {
 
-            json response = { "TscResult": Tsc };
+            json response = {"TscResult": Tsc};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": Tsc.message()};
+            json response = {"error": Tsc.message()};
             check caller->respond(response);
 
         }
     }
+
+    //meetings
+    resource function post schedule_meeting(meetings:NewMeeting newMeeting) returns meetings:MeetingCreated|error? {
+        sql:ExecutionResult result = check self.dbClient->execute(`INSERT INTO MEETINGS (TITLE, DESCRIPTION, MEETING_DATE, MEETING_TIME, LOCATION, STAKEHOLDERS) VALUES (${newMeeting.title}, ${newMeeting.description}, ${newMeeting.meeting_date}, ${newMeeting.meeting_time}, ${newMeeting.location}, ${newMeeting.stakeholders})`);
+        string|int? id = result.lastInsertId;
+        return id is int ? <meetings:MeetingCreated>{body: {id, ...newMeeting}} : error("Error occurred while retriving the post id");
+    }
+
+    // Get all upcoming meetings
+    resource function get upcoming_meetings() returns meetings:Meeting[]|error {
+        sql:ParameterizedQuery query = `SELECT * FROM MEETINGS WHERE MEETING_DATE >= CURRENT_DATE ORDER BY MEETING_DATE ASC`;
+        stream<meetings:Meeting, sql:Error?> meetingStream = self.dbClient->query(query);
+        return from meetings:Meeting meeting in meetingStream
+            select meeting;
+    }
+
+    // Get all meetings
+    resource function get all_meetings() returns meetings:Meeting[]|error {
+        sql:ParameterizedQuery query = `SELECT * FROM MEETINGS ORDER BY MEETING_DATE ASC`;
+        stream<meetings:Meeting, sql:Error?> meetingStream = self.dbClient->query(query);
+        return from meetings:Meeting meeting in meetingStream
+            select meeting;
+    }
+
+    // Get a single meeting by ID
+    resource function get meetings/[int id]() returns meetings:Meeting|http:NotFound {
+        meetings:Meeting|error meeting = self.dbClient->queryRow(`SELECT * FROM MEETINGS WHERE ID = ${id}`);
+        return meeting is meetings:Meeting ? meeting : http:NOT_FOUND;
+    }
+
+    //meetings
 
     resource function get googleLogin(http:Caller caller, http:Request req) returns error? {
         http:Response redirectResponse = new;

@@ -1,4 +1,5 @@
 import ballerina/sql;
+
 // OAuth2 Configuration
 configurable string CLIENT_ID = ?;
 configurable string CLIENT_SECRET = ?;
@@ -13,6 +14,7 @@ configurable string DB_PASSWORD = ?;
 string jdbcUrl = string `${DB_URL}?user=${DB_USERNAME}&password=${DB_PASSWORD}`;
 
 function initDatabase(sql:Client dbClient) returns error? {
+    // Create users table if it doesn't exist
     _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS users (
                                     username VARCHAR(50) NOT NULL,
                                     password VARCHAR(100) NOT NULL,
@@ -26,4 +28,14 @@ function initDatabase(sql:Client dbClient) returns error? {
                                     contactNumber VARCHAR(10),
                                     role VARCHAR(40),
                                     created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+
+    // Create meetings table for stakeholder meetings
+    _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS meetings (
+                                    ID SERIAL PRIMARY KEY,
+                                    title VARCHAR(100) NOT NULL,
+                                    description TEXT,
+                                    meeting_date DATE NOT NULL,
+                                    meeting_time TIME NOT NULL,
+                                    location VARCHAR(100),
+                                    stakeholders TEXT)`);
 };
