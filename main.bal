@@ -183,7 +183,10 @@ service /api on new http:Listener(9091) {
                     log:printInfo("User email: " + email);
 
                     if email != "" && self.checkUserExists(email) {
-                        check caller->respond("User successfully authenticated!");
+                        // check caller->respond("User successfully authenticated!");
+                        string userEmail = email;
+                        json response = { user_email: userEmail };
+                        check caller->respond(response);
                     } else {
                         check caller->respond("User does not exist. Please sign up.");
                     }
@@ -280,4 +283,18 @@ service /api on new http:Listener(9091) {
         string jwtToken = check jwt:issue(issuerConfig);
         return jwtToken;
     }
+
+    // resource function post registerStakeholder(http:Caller caller, Stakeholder stakeholder) returns error? {
+    //     sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
+    //     check caller->respond("Successfully Added");
+    // }
+
+    resource function post registerStakeholder(http:Caller caller, http:Request req) returns error? {
+        json payload = check req.getJsonPayload();
+        Stakeholder stakeholder = check payload.cloneWithType(Stakeholder);
+
+        sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
+        check caller->respond("Successfully Added");
+    }
+
 }

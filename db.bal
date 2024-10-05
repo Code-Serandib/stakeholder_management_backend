@@ -26,4 +26,22 @@ function initDatabase(sql:Client dbClient) returns error? {
                                     contactNumber VARCHAR(10),
                                     role VARCHAR(40),
                                     created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+
+    _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS stakeholder_types (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    type_name VARCHAR(50) NOT NULL
+                                )`);
+
+    _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS stakeholders (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    stakeholder_name VARCHAR(255) NOT NULL,
+                                    stakeholder_type INT,
+                                    description TEXT,
+                                    email_address VARCHAR(255) NOT NULL,
+                                    user_email VARCHAR(100),
+                                    FOREIGN KEY (stakeholder_type) REFERENCES stakeholder_types(id),
+                                    FOREIGN KEY (user_email) REFERENCES users(email)
+)`);
+
+    
 };
