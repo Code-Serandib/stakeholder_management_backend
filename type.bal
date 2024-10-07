@@ -25,3 +25,8 @@ type Stakeholder record {
     string email_address;
     string user_email;
 };
+
+type StakeholderType record {
+    int id;
+    string type_name;
+};

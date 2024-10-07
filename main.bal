@@ -1,13 +1,14 @@
-import ballerina/http;
-import stakeholder_management_backend.risk_modeling;
-import ballerina/data.jsondata;
 import stakeholder_management_backend.engagement_metrics;
+import stakeholder_management_backend.risk_modeling;
+
+import ballerina/data.jsondata;
+import ballerina/http;
+import ballerina/io;
+import ballerina/jwt;
+import ballerina/log;
 import ballerina/sql;
 import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
-import ballerina/io;
-import ballerina/log;
-import ballerina/jwt;
 
 @http:ServiceConfig {
     cors: {
@@ -23,7 +24,7 @@ service /api on new http:Listener(9091) {
     final sql:Client dbClient;
 
     function init() returns error? {
-        self.metricsAPIClient = check new("http://localhost:9090/stakeholder-analytics");
+        self.metricsAPIClient = check new ("http://localhost:9090/stakeholder-analytics");
         self.dbClient = check new jdbc:Client(jdbcUrl);
         check initDatabase(self.dbClient);
     }
@@ -33,14 +34,14 @@ service /api on new http:Listener(9091) {
 
         json|error? riskScore = risk_modeling:calculateRiskScore(self.metricsAPIClient, riskInput);
 
-        if riskScore is json{
+        if riskScore is json {
 
-            json response = { "riskScore": riskScore };
+            json response = {"riskScore": riskScore};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": riskScore.message()};
+            json response = {"error": riskScore.message()};
             check caller->respond(response);
 
         }
@@ -55,14 +56,14 @@ service /api on new http:Listener(9091) {
 
         json|error? projectRisk = risk_modeling:calculateProjectRisk(self.metricsAPIClient, riskInputs, influences);
 
-        if projectRisk is json{
+        if projectRisk is json {
 
-            json response = { "projectRisk": projectRisk };
+            json response = {"projectRisk": projectRisk};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": projectRisk.message()};
+            json response = {"error": projectRisk.message()};
             check caller->respond(response);
 
         }
@@ -77,14 +78,14 @@ service /api on new http:Listener(9091) {
 
         json|error? engagementDropAlerts = risk_modeling:engagementDropAlert(self.metricsAPIClient, riskInputs, engamenetTreshold);
 
-        if engagementDropAlerts is json{
+        if engagementDropAlerts is json {
 
-            json response = { "engagementDropAlerts": engagementDropAlerts };
+            json response = {"engagementDropAlerts": engagementDropAlerts};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": engagementDropAlerts.message()};
+            json response = {"error": engagementDropAlerts.message()};
             check caller->respond(response);
 
         }
@@ -95,14 +96,14 @@ service /api on new http:Listener(9091) {
 
         json|error? Eps = engagement_metrics:calculateEps(self.metricsAPIClient, epsInput);
 
-        if Eps is json{
+        if Eps is json {
 
-            json response = { "EpsResult": Eps };
+            json response = {"EpsResult": Eps};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": Eps.message()};
+            json response = {"error": Eps.message()};
             check caller->respond(response);
 
         }
@@ -113,14 +114,14 @@ service /api on new http:Listener(9091) {
 
         json|error? Bsc = engagement_metrics:calculateBsc(self.metricsAPIClient, bscInput);
 
-        if Bsc is json{
+        if Bsc is json {
 
-            json response = { "BscResult": Bsc };
+            json response = {"BscResult": Bsc};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": Bsc.message()};
+            json response = {"error": Bsc.message()};
             check caller->respond(response);
 
         }
@@ -131,14 +132,14 @@ service /api on new http:Listener(9091) {
 
         json|error? Tsc = engagement_metrics:calculateTes(self.metricsAPIClient, tesInput);
 
-        if Tsc is json{
+        if Tsc is json {
 
-            json response = { "TscResult": Tsc };
+            json response = {"TscResult": Tsc};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": Tsc.message()};
+            json response = {"error": Tsc.message()};
             check caller->respond(response);
 
         }
@@ -185,7 +186,7 @@ service /api on new http:Listener(9091) {
                     if email != "" && self.checkUserExists(email) {
                         // check caller->respond("User successfully authenticated!");
                         string userEmail = email;
-                        json response = { user_email: userEmail };
+                        json response = {user_email: userEmail};
                         check caller->respond(response);
                     } else {
                         check caller->respond("User does not exist. Please sign up.");
@@ -295,6 +296,71 @@ service /api on new http:Listener(9091) {
 
         sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
         check caller->respond("Successfully Added");
+    }
+
+    // Fetch all stakeholders for a given user_email
+    resource function get getAllStakeholder(string user_email) returns Stakeholder[]|error? {
+        return self.getAllStakeholders(user_email);
+    }
+
+    resource function get sort(string types, string user_email) returns Stakeholder[]|error {
+        return self.sortStakeholdersByType(types, user_email);
+    }
+
+    resource function get search(string email, string user_email) returns Stakeholder[]|error? {
+        return self.searchStakeholderByEmail(email, user_email);
+    }
+
+    resource function get types() returns StakeholderType[]|error {
+        return self.getAllStakeholderTypes();
+    }
+
+    // Function to get all stakeholders
+    function getAllStakeholders(string user_email) returns Stakeholder[]|error {
+        Stakeholder[] stakeholders = [];
+        // sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE user_email = ${user_email}`;
+        stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(getAllStakeholderParameterizedQuery(user_email));
+
+        check from Stakeholder stakeholder in resultStream
+            do {
+                stakeholders.push(stakeholder);
+            };
+
+        check resultStream.close();
+        return stakeholders;
+    }
+
+    isolated function sortStakeholdersByType(string type_id, string user_email) returns Stakeholder[]|error {
+        Stakeholder[] stakeholders = [];
+        stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(`SELECT * FROM Stakeholders WHERE stakeholder_type = ${type_id} and user_email = '${user_email}'`);
+        check from Stakeholder stakeholder in resultStream
+            do {
+                stakeholders.push(stakeholder);
+            };
+        check resultStream.close();
+        return stakeholders;
+    }
+
+    isolated function searchStakeholderByEmail(string email, string user_email) returns Stakeholder[]|error? {
+        Stakeholder[] stakeholders = [];
+        stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(`SELECT * FROM Stakeholders WHERE email_address like '%${email}%' and user_email = '${user_email}'`);
+        check from Stakeholder stakeholder in resultStream
+            do {
+                stakeholders.push(stakeholder);
+            };
+        check resultStream.close();
+        return stakeholders;
+    }
+
+    isolated function getAllStakeholderTypes() returns StakeholderType[]|error {
+        StakeholderType[] types = [];
+        stream<StakeholderType, sql:Error?> resultStream = self.dbClient->query(`SELECT * FROM stakeholder_types`);
+        check from StakeholderType typ in resultStream
+            do {
+                types.push(typ);
+            };
+        check resultStream.close();
+        return types;
     }
 
 }
