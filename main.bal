@@ -1,7 +1,7 @@
 import stakeholder_management_backend.engagement_metrics;
 import stakeholder_management_backend.risk_modeling;
-
 import ballerina/data.jsondata;
+import stakeholder_management_backend.theoretical_depth;
 import ballerina/http;
 import ballerina/io;
 import ballerina/jwt;
@@ -140,6 +140,60 @@ service /api on new http:Listener(9091) {
         } else {
 
             json response = {"error": Tsc.message()};
+            check caller->respond(response);
+
+        }
+    }
+
+    //influence_index
+    resource function post influence_index_cal(http:Caller caller, theoretical_depth:SEmetrics se_metrics) returns error? {
+
+        json|error? influenceIndex = theoretical_depth:calculateInfluenceIndex(self.metricsAPIClient, se_metrics);
+
+        if influenceIndex is json{
+
+            json response = { "influenceIndex": influenceIndex };
+            check caller->respond(response);
+ 
+        } else {
+
+            json response = { "error": influenceIndex.message()};
+            check caller->respond(response);
+
+        }
+    }
+
+    //nashEquilibrium
+    resource function post nash_equilibrium_cal(http:Caller caller, theoretical_depth:CustomTable customTable) returns error? {
+
+        json|error? nashEquilibrium = theoretical_depth:calculateNashEquilibrium(self.metricsAPIClient, customTable);
+
+        if nashEquilibrium is json{
+
+            json response = { "nashEquilibrium": nashEquilibrium };
+            check caller->respond(response);
+ 
+        } else {
+
+            json response = { "error": nashEquilibrium.message()};
+            check caller->respond(response);
+
+        }
+    }
+
+    //socialExchange
+    resource function post social_exchange_cal(http:Caller caller, theoretical_depth:StakeholderRelation stakeholderRelation) returns error? {
+
+        json|error? socialExchange = theoretical_depth:calculateSocialExchange(self.metricsAPIClient, stakeholderRelation);
+
+        if socialExchange is json{
+
+            json response = { "socialExchange": socialExchange };
+            check caller->respond(response);
+ 
+        } else {
+
+            json response = { "error": socialExchange.message()};
             check caller->respond(response);
 
         }
@@ -285,6 +339,80 @@ service /api on new http:Listener(9091) {
         return jwtToken;
     }
 
+    // Calculate SIM
+resource function post calculate_sim(http:Caller caller, http:Request req) returns error? {
+    json payload = check req.getJsonPayload();
+
+    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+
+    // Call the calculateSIM function and handle the response or error
+    json|error? simResponse = stakeholder_equilibrium:calculateSIM(self.metricsAPIClient, stakeholders);
+
+    if simResponse is json {
+        // If the result is successful, send the response
+        json response = { "Stakeholder Influence Matrix (SIM)": simResponse };
+        check caller->respond(response);
+    } else {
+        // If there's an error, return the error message
+        json response = { "error": simResponse.message() };
+        check caller->respond(response);
+    }
+}
+// Calculate DSI
+resource function post calculate_dsi(http:Caller caller, http:Request req) returns error? {
+    json payload = check req.getJsonPayload();
+
+    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+    float[] deltaBehavior = check jsondata:parseAsType(check payload.deltaBehavior);
+
+    json|error? dsiResult = stakeholder_equilibrium:calculateDynamicStakeholderImpact(self.metricsAPIClient, stakeholders, deltaBehavior);
+
+    if dsiResult is json {
+        json response = { "Dynamic Stakeholder Impact (DSI)": dsiResult };
+        check caller->respond(response);
+    } else {
+        json response = { "error": dsiResult.message() };
+        check caller->respond(response);
+    }
+}
+
+// Calculate SNS 
+
+resource function post calculate_sns(http:Caller caller, http:Request req) returns error? {
+    json payload = check req.getJsonPayload();
+
+    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+    float[] deltaBehavior = check jsondata:parseAsType(check payload.deltaBehavior);
+
+    json|error? snsResult = stakeholder_equilibrium:calculateStakeholderNetworkStability(self.metricsAPIClient, stakeholders, deltaBehavior);
+
+    if snsResult is json {
+        json response = { "Stakeholder Network Stability (SNS)": snsResult };
+        check caller->respond(response);
+    } else {
+        json response = { "error": snsResult.message() };
+        check caller->respond(response);
+    }
+}
+
+
+// Calculate SIS 
+resource function post calculate_sis(http:Caller caller, http:Request req) returns error? {
+    json payload = check req.getJsonPayload();
+
+    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+
+    json|error? sisResult = stakeholder_equilibrium:calculateSystemicInfluenceScore(self.metricsAPIClient, stakeholders);
+
+    if sisResult is json {
+        json response = { "Systemic Influence Score (SIS)": sisResult };
+        check caller->respond(response);
+    } else {
+        json response = { "error": sisResult.message() };
+        check caller->respond(response);
+    }
+}
+
     // resource function post registerStakeholder(http:Caller caller, Stakeholder stakeholder) returns error? {
     //     sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
     //     check caller->respond("Successfully Added");
@@ -374,6 +502,7 @@ service /api on new http:Listener(9091) {
         check resultStream.close();
         return types;
     }
+
 
     function checkIfEmailExists(string email_address) returns boolean|error {
     stream<record {}, sql:Error?> resultStream = self.dbClient->query(`SELECT 1 FROM stakeholders WHERE email_address = ${email_address}`);
