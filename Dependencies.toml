@@ -29,7 +29,8 @@ modules = [
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.engagement_metrics"},
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.risk_modeling"},
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_in"},
-	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_up"}
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_up"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.theoretical_depth"}
 ]
 
 [[package]]
