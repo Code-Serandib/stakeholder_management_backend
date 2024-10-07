@@ -8,6 +8,7 @@ import ballerinax/mysql.driver as _;
 import ballerina/io;
 import ballerina/log;
 import ballerina/jwt;
+import stakeholder_management_backend.stakeholder_equilibrium;
 
 @http:ServiceConfig {
     cors: {
@@ -280,4 +281,80 @@ service /api on new http:Listener(9091) {
         string jwtToken = check jwt:issue(issuerConfig);
         return jwtToken;
     }
+
+    // Calculate SIM
+resource function post calculate_sim(http:Caller caller, http:Request req) returns error? {
+    json payload = check req.getJsonPayload();
+
+    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+
+    // Call the calculateSIM function and handle the response or error
+    json|error? simResponse = stakeholder_equilibrium:calculateSIM(self.metricsAPIClient, stakeholders);
+
+    if simResponse is json {
+        // If the result is successful, send the response
+        json response = { "Stakeholder Influence Matrix (SIM)": simResponse };
+        check caller->respond(response);
+    } else {
+        // If there's an error, return the error message
+        json response = { "error": simResponse.message() };
+        check caller->respond(response);
+    }
+}
+// Calculate DSI
+resource function post calculate_dsi(http:Caller caller, http:Request req) returns error? {
+    json payload = check req.getJsonPayload();
+
+    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+    float[] deltaBehavior = check jsondata:parseAsType(check payload.deltaBehavior);
+
+    json|error? dsiResult = stakeholder_equilibrium:calculateDynamicStakeholderImpact(self.metricsAPIClient, stakeholders, deltaBehavior);
+
+    if dsiResult is json {
+        json response = { "Dynamic Stakeholder Impact (DSI)": dsiResult };
+        check caller->respond(response);
+    } else {
+        json response = { "error": dsiResult.message() };
+        check caller->respond(response);
+    }
+}
+
+// Calculate SNS 
+
+resource function post calculate_sns(http:Caller caller, http:Request req) returns error? {
+    json payload = check req.getJsonPayload();
+
+    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+    float[] deltaBehavior = check jsondata:parseAsType(check payload.deltaBehavior);
+
+    json|error? snsResult = stakeholder_equilibrium:calculateStakeholderNetworkStability(self.metricsAPIClient, stakeholders, deltaBehavior);
+
+    if snsResult is json {
+        json response = { "Stakeholder Network Stability (SNS)": snsResult };
+        check caller->respond(response);
+    } else {
+        json response = { "error": snsResult.message() };
+        check caller->respond(response);
+    }
+}
+
+
+// Calculate SIS 
+resource function post calculate_sis(http:Caller caller, http:Request req) returns error? {
+    json payload = check req.getJsonPayload();
+
+    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+
+    json|error? sisResult = stakeholder_equilibrium:calculateSystemicInfluenceScore(self.metricsAPIClient, stakeholders);
+
+    if sisResult is json {
+        json response = { "Systemic Influence Score (SIS)": sisResult };
+        check caller->respond(response);
+    } else {
+        json response = { "error": sisResult.message() };
+        check caller->respond(response);
+    }
+}
+
+
 }
