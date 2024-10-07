@@ -15,6 +15,7 @@ dependencies = [
 	{org = "ballerina", name = "data.jsondata"},
 	{org = "ballerina", name = "http"},
 	{org = "ballerina", name = "io"},
+	{org = "ballerina", name = "jwt"},
 	{org = "ballerina", name = "log"},
 	{org = "ballerina", name = "oauth2"},
 	{org = "ballerina", name = "sql"},
@@ -28,7 +29,8 @@ modules = [
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.engagement_metrics"},
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.risk_modeling"},
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_in"},
-	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_up"}
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_up"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.theoretical_depth"}
 ]
 
 [[package]]
@@ -156,6 +158,9 @@ dependencies = [
 	{org = "ballerina", name = "lang.string"},
 	{org = "ballerina", name = "log"},
 	{org = "ballerina", name = "time"}
+]
+modules = [
+	{org = "ballerina", packageName = "jwt", moduleName = "jwt"}
 ]
 
 [[package]]

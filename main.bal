@@ -2,6 +2,7 @@ import ballerina/http;
 import stakeholder_management_backend.risk_modeling;
 import ballerina/data.jsondata;
 import stakeholder_management_backend.engagement_metrics;
+import stakeholder_management_backend.theoretical_depth;
 import ballerina/sql;
 import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
@@ -139,6 +140,60 @@ service /api on new http:Listener(9091) {
         } else {
 
             json response = { "error": Tsc.message()};
+            check caller->respond(response);
+
+        }
+    }
+
+    //influence_index
+    resource function post influence_index_cal(http:Caller caller, theoretical_depth:SEmetrics se_metrics) returns error? {
+
+        json|error? influenceIndex = theoretical_depth:calculateInfluenceIndex(self.metricsAPIClient, se_metrics);
+
+        if influenceIndex is json{
+
+            json response = { "influenceIndex": influenceIndex };
+            check caller->respond(response);
+ 
+        } else {
+
+            json response = { "error": influenceIndex.message()};
+            check caller->respond(response);
+
+        }
+    }
+
+    //nashEquilibrium
+    resource function post nash_equilibrium_cal(http:Caller caller, theoretical_depth:CustomTable customTable) returns error? {
+
+        json|error? nashEquilibrium = theoretical_depth:calculateNashEquilibrium(self.metricsAPIClient, customTable);
+
+        if nashEquilibrium is json{
+
+            json response = { "nashEquilibrium": nashEquilibrium };
+            check caller->respond(response);
+ 
+        } else {
+
+            json response = { "error": nashEquilibrium.message()};
+            check caller->respond(response);
+
+        }
+    }
+
+    //socialExchange
+    resource function post social_exchange_cal(http:Caller caller, theoretical_depth:StakeholderRelation stakeholderRelation) returns error? {
+
+        json|error? socialExchange = theoretical_depth:calculateSocialExchange(self.metricsAPIClient, stakeholderRelation);
+
+        if socialExchange is json{
+
+            json response = { "socialExchange": socialExchange };
+            check caller->respond(response);
+ 
+        } else {
+
+            json response = { "error": socialExchange.message()};
             check caller->respond(response);
 
         }
