@@ -1,6 +1,5 @@
 import ballerina/http;
 import ballerina/oauth2;
-import ballerina/sql;
 
 // OAuth2 client configuration for Google
 oauth2:ClientCredentialsGrantConfig oauthConfig = {
@@ -12,24 +11,24 @@ oauth2:ClientCredentialsGrantConfig oauthConfig = {
 
 string authorizationUrl = string `${AUTH_URL}?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=${SCOPE}&access_type=offline&prompt=consent`;
 
-function signupParameterizedQuery(Users users) returns sql:ParameterizedQuery {
-    string organizationName = users.organizationName ?: "";
-    string organizationType = users.organizationType ?: "";
-    string industry = users.industry ?: "";
-    string address = users.address;
-    string country = users.country;
-    string administratorName = users.administratorName;
-    string email = users.email;
-    string contactNumber = users.contactNumber ?: "";
-    string role = users.role ?: "";
-    string username = users.username;
-    string password = users.password;
+// Function to get user info from Google using access token
+function getUserInfo(string accessToken) returns json|error {
+    http:Client googleClient = check new ("https://www.googleapis.com");
+    // http:Request req = new;
+    // req.setHeader("Authorization", "Bearer " + accessToken);
 
-    sql:ParameterizedQuery query = `INSERT INTO users 
-        (organizationName, organizationType, industry, address, country, administratorName, email, contactNumber, role, username, password) VALUES 
-        (${organizationName}, ${organizationType}, ${industry}, ${address}, ${country}, ${administratorName}, ${email}, ${contactNumber}, ${role}, ${username}, ${password})`;
-    return query;
-};
+    // Define headers to include the Authorization token
+    map<string> headers = {"Authorization": "Bearer " + accessToken};
+
+    http:Response|error response = googleClient->get("/oauth2/v2/userinfo", headers);
+    if response is http:Response {
+        json|error userInfo = response.getJsonPayload();
+        if userInfo is json {
+            return userInfo;
+        }
+    }
+    return error("Failed to get user information");
+}
 
 // Utility function to get email from Google access token
 function getEmailFromAccessToken(string accessToken) returns string|error {
