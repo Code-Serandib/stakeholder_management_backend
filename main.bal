@@ -493,8 +493,20 @@ service /api on new http:Listener(9091) {
         json payload = check req.getJsonPayload();
         Stakeholder stakeholder = check payload.cloneWithType(Stakeholder);
 
+        // Check if the email already exists
+        boolean emailExists = check self.checkIfEmailExists(stakeholder.email_address);
+
+        if (emailExists) {
+        // Respond with a conflict message
+        check caller->respond({ statusCode: 409, 
+        message: "Email already exists. Please use a different email address." });
+        return;
+        
+    }
+
         sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
-        check caller->respond("Successfully Added");
+        // check caller->respond("Successfully Added");
+        check caller->respond({ message: "Stakeholder registered successfully" });
     }
 
     // Fetch all stakeholders for a given user_email
@@ -502,12 +514,12 @@ service /api on new http:Listener(9091) {
         return self.getAllStakeholders(user_email);
     }
 
-    resource function get sort(string types, string user_email) returns Stakeholder[]|error {
-        return self.sortStakeholdersByType(types, user_email);
+    resource function get sort(string stakeholder_type, string user_email) returns Stakeholder[]|error {
+        return self.sortStakeholdersByType(stakeholder_type, user_email);
     }
 
-    resource function get search(string email, string user_email) returns Stakeholder[]|error? {
-        return self.searchStakeholderByEmail(email, user_email);
+    resource function get search(string email_address, string user_email) returns Stakeholder[]|error? {
+        return self.searchStakeholderByEmail(email_address, user_email);
     }
 
     resource function get types() returns StakeholderType[]|error {
@@ -529,9 +541,9 @@ service /api on new http:Listener(9091) {
         return stakeholders;
     }
 
-    isolated function sortStakeholdersByType(string type_id, string user_email) returns Stakeholder[]|error {
+    function sortStakeholdersByType(string type_id, string user_email) returns Stakeholder[]|error {
         Stakeholder[] stakeholders = [];
-        stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(`SELECT * FROM Stakeholders WHERE stakeholder_type = ${type_id} and user_email = '${user_email}'`);
+        stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(sortStakeholdersByTypeParameterizedQuery(type_id,user_email));
         check from Stakeholder stakeholder in resultStream
             do {
                 stakeholders.push(stakeholder);
@@ -540,9 +552,9 @@ service /api on new http:Listener(9091) {
         return stakeholders;
     }
 
-    isolated function searchStakeholderByEmail(string email, string user_email) returns Stakeholder[]|error? {
+    function searchStakeholderByEmail(string email_address, string user_email) returns Stakeholder[]|error? {
         Stakeholder[] stakeholders = [];
-        stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(`SELECT * FROM Stakeholders WHERE email_address like '%${email}%' and user_email = '${user_email}'`);
+        stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(searchStakeholderByEmailParameterizedQuery(email_address,user_email));
         check from Stakeholder stakeholder in resultStream
             do {
                 stakeholders.push(stakeholder);
@@ -561,5 +573,17 @@ service /api on new http:Listener(9091) {
         check resultStream.close();
         return types;
     }
+
+    function checkIfEmailExists(string email_address) returns boolean|error {
+    stream<record {}, sql:Error?> resultStream = self.dbClient->query(`SELECT 1 FROM stakeholders WHERE email_address = ${email_address}`);
+    var result = check resultStream.next();
+
+    if result is record {} {
+        // Email exists
+        return true;
+    }
+
+    return false; // Email doesn't exist
+}
 
 }

@@ -59,3 +59,17 @@ function getAllStakeholderParameterizedQuery(string user_email) returns sql:Para
     sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE user_email = ${user_email}`;
     return query;
 };
+
+function sortStakeholdersByTypeParameterizedQuery(string type_id, string user_email) returns sql:ParameterizedQuery {
+
+    sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE stakeholder_type = ${type_id} and user_email = ${user_email}`;
+    return query;
+};
+
+function searchStakeholderByEmailParameterizedQuery(string email_address, string user_email) returns sql:ParameterizedQuery {
+
+    string searchEmail = "%" + email_address + "%";  // Concatenate % symbols for the LIKE clause
+
+    sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE email_address LIKE ${searchEmail} AND user_email = ${user_email}`;
+    return query;
+};
