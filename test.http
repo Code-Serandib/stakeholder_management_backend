@@ -1,0 +1,2 @@
+### social exchange
+GET http://localhost:9091/api/getUserDetails?email=jon@mail.com

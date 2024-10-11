@@ -2,7 +2,7 @@ import ballerina/sql;
 // OAuth2 Configuration
 configurable string CLIENT_ID = ?;
 configurable string CLIENT_SECRET = ?;
-configurable string REDIRECT_URI = "http://localhost:3000/home";
+configurable string REDIRECT_URI = "http://localhost:3000/sign-in";
 configurable string TOKEN_URL = "https://oauth2.googleapis.com/token";
 configurable string AUTH_URL = "https://accounts.google.com/o/oauth2/auth";
 configurable string SCOPE = "https://www.googleapis.com/auth/userinfo.email";

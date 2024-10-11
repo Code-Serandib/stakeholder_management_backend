@@ -1,12 +1,15 @@
 import stakeholder_management_backend.engagement_metrics;
 import stakeholder_management_backend.risk_modeling;
-import ballerina/data.jsondata;
+import stakeholder_management_backend.stakeholder_equilibrium;
 import stakeholder_management_backend.theoretical_depth;
+
+import ballerina/data.jsondata;
 import ballerina/http;
 import ballerina/io;
 import ballerina/jwt;
 import ballerina/log;
 import ballerina/sql;
+import ballerina/uuid;
 import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
 
@@ -150,14 +153,14 @@ service /api on new http:Listener(9091) {
 
         json|error? influenceIndex = theoretical_depth:calculateInfluenceIndex(self.metricsAPIClient, se_metrics);
 
-        if influenceIndex is json{
+        if influenceIndex is json {
 
-            json response = { "influenceIndex": influenceIndex };
+            json response = {"influenceIndex": influenceIndex};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": influenceIndex.message()};
+            json response = {"error": influenceIndex.message()};
             check caller->respond(response);
 
         }
@@ -168,14 +171,14 @@ service /api on new http:Listener(9091) {
 
         json|error? nashEquilibrium = theoretical_depth:calculateNashEquilibrium(self.metricsAPIClient, customTable);
 
-        if nashEquilibrium is json{
+        if nashEquilibrium is json {
 
-            json response = { "nashEquilibrium": nashEquilibrium };
+            json response = {"nashEquilibrium": nashEquilibrium};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": nashEquilibrium.message()};
+            json response = {"error": nashEquilibrium.message()};
             check caller->respond(response);
 
         }
@@ -186,14 +189,14 @@ service /api on new http:Listener(9091) {
 
         json|error? socialExchange = theoretical_depth:calculateSocialExchange(self.metricsAPIClient, stakeholderRelation);
 
-        if socialExchange is json{
+        if socialExchange is json {
 
-            json response = { "socialExchange": socialExchange };
+            json response = {"socialExchange": socialExchange};
             check caller->respond(response);
- 
+
         } else {
 
-            json response = { "error": socialExchange.message()};
+            json response = {"error": socialExchange.message()};
             check caller->respond(response);
 
         }
@@ -209,21 +212,29 @@ service /api on new http:Listener(9091) {
     // Callback route to handle Google OAuth2 response
     resource function get callback(http:Caller caller, http:Request req) returns error? {
         string? authCode = req.getQueryParamValue("code");
+
         if authCode is string {
             log:printInfo("Received authorization code: " + authCode);
 
+            // Create the request payload as a URL-encoded string
+            string requestBody = "code=" + authCode + "&client_id=" + CLIENT_ID +
+                            "&client_secret=" + CLIENT_SECRET + "&redirect_uri=" + REDIRECT_URI +
+                            "&grant_type=authorization_code";
+
+            // Create a new HTTP request and set headers
             http:Request tokenRequest = new;
             tokenRequest.setHeader("Content-Type", "application/x-www-form-urlencoded");
+            tokenRequest.setPayload(requestBody);
 
-            map<string> body = {
-                "code": authCode,
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "redirect_uri": REDIRECT_URI,
-                "grant_type": "authorization_code"
-            };
+            // map<string> body = {
+            //     "code": authCode,
+            //     "client_id": CLIENT_ID,
+            //     "client_secret": CLIENT_SECRET,
+            //     "redirect_uri": REDIRECT_URI,
+            //     "grant_type": "authorization_code"
+            // };
 
-            tokenRequest.setPayload(body);
+            // tokenRequest.setPayload(body);
 
             http:Client tokenClient = check new (TOKEN_URL);
             http:Response|error tokenResponse = tokenClient->post("", tokenRequest);
@@ -231,20 +242,47 @@ service /api on new http:Listener(9091) {
             if tokenResponse is http:Response {
                 json|error jsonResponse = tokenResponse.getJsonPayload();
                 if jsonResponse is json {
-                    string accessToken = (check jsonResponse.access_token).toString();
-                    log:printInfo("Access Token: " + accessToken);
+                    io:println("Im in 3 :", jsonResponse);
+                    // Check for the "access_token" field in the JSON response
+                    if jsonResponse.access_token is string {
+                        string accessToken = (check jsonResponse.access_token).toString();
+                        log:printInfo("Access Token: " + accessToken);
 
-                    string email = check getEmailFromAccessToken(accessToken);
-                    log:printInfo("User email: " + email);
+                        json userInfo = check getUserInfo(accessToken);
 
-                    if email != "" && self.checkUserExists(email) {
-                        // check caller->respond("User successfully authenticated!");
-                        string userEmail = email;
-                        json response = {user_email: userEmail};
-                        check caller->respond(response);
+                        string email = check getEmailFromAccessToken(accessToken);
+                        log:printInfo("User email: " + email);
+
+                        // Check if the user exists or register a new user
+                        if email != "" && !self.checkUserExists(email) {
+                            io:println("Im in 4");
+                            // Register new user if not exist
+                            string userName = (check userInfo.name).toString();
+                            string address = (check userInfo.address).toString();
+                            string country = (check userInfo.country).toString();
+                            string contactNumber = (check userInfo.phone).toString();
+
+                            // Generate a random password using UUID
+                            string password = uuid:createType1AsString();
+
+                            // Insert user details into the database
+                            sql:ParameterizedQuery query = `INSERT INTO users 
+                            (address, country, administratorName, email, contactNumber, username, password) VALUES 
+                            (${address}, ${country}, ${userName}, ${email}, ${contactNumber}, ${userName}, ${password})`;
+
+                            sql:ExecutionResult _ = check self.dbClient->execute(query);
+                            log:printInfo("New user registered: " + email);
+
+                            json response = {status: "User successfully registered!", user_email: email};
+                            check caller->respond(response);
+                        } else {
+                            json response = {status: "User already exists!", user_email: email};
+                            check caller->respond(response);
+                        }
                     } else {
-                        check caller->respond("User does not exist. Please sign up.");
+                        check caller->respond("Failed to retrieve access token from Google.");
                     }
+
                 }
             }
         } else {
@@ -255,6 +293,39 @@ service /api on new http:Listener(9091) {
     resource function post signup(http:Caller caller, Users users) returns error? {
         sql:ExecutionResult _ = check self.dbClient->execute(signupParameterizedQuery(users));
         check caller->respond("Sign up successful");
+    }
+
+    resource function post userProfileUpdate(http:Caller caller, Users users) returns error? {
+        sql:ExecutionResult _ = check self.dbClient->execute(updateUserParameterizedQuery(users));
+        check caller->respond("Update successful");
+    }
+
+    resource function get getUserDetails(string? email) returns Users|error {
+        if email is string {
+            io:println("Received email: " + email.toBalString());
+            stream<record{}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
+            io:println("Received dsta: " + resultStream.toBalString());
+
+            check from record{} users in resultStream
+                    do {
+                        io:println("Student name: ", users);
+                        Users user = {
+                            organizationName: users["organizationName"].toString(),
+                            organizationType: users["organizationType"].toString(),
+                            industry: users["industry"].toString(),
+                            address: users["address"].toString(),
+                            country: users["country"].toString(),
+                            administratorName: users["administratorName"].toString(),
+                            email: users["email"].toString(),
+                            contactNumber: users["contactNumber"].toString(),
+                            role: users["role"].toString(),
+                            username: users["username"].toString(),
+                            password: users["password"].toString()
+                        };
+                        return user;
+                    };
+        }
+        return error("User does not exist with this email.");
     }
 
     resource function post signIn(http:Caller caller, SignInInput signInInput) returns error? {
@@ -340,78 +411,78 @@ service /api on new http:Listener(9091) {
     }
 
     // Calculate SIM
-resource function post calculate_sim(http:Caller caller, http:Request req) returns error? {
-    json payload = check req.getJsonPayload();
+    resource function post calculate_sim(http:Caller caller, http:Request req) returns error? {
+        json payload = check req.getJsonPayload();
 
-    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+        stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
 
-    // Call the calculateSIM function and handle the response or error
-    json|error? simResponse = stakeholder_equilibrium:calculateSIM(self.metricsAPIClient, stakeholders);
+        // Call the calculateSIM function and handle the response or error
+        json|error? simResponse = stakeholder_equilibrium:calculateSIM(self.metricsAPIClient, stakeholders);
 
-    if simResponse is json {
-        // If the result is successful, send the response
-        json response = { "Stakeholder Influence Matrix (SIM)": simResponse };
-        check caller->respond(response);
-    } else {
-        // If there's an error, return the error message
-        json response = { "error": simResponse.message() };
-        check caller->respond(response);
+        if simResponse is json {
+            // If the result is successful, send the response
+            json response = {"Stakeholder Influence Matrix (SIM)": simResponse};
+            check caller->respond(response);
+        } else {
+            // If there's an error, return the error message
+            json response = {"error": simResponse.message()};
+            check caller->respond(response);
+        }
     }
-}
-// Calculate DSI
-resource function post calculate_dsi(http:Caller caller, http:Request req) returns error? {
-    json payload = check req.getJsonPayload();
 
-    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
-    float[] deltaBehavior = check jsondata:parseAsType(check payload.deltaBehavior);
+    // Calculate DSI
+    resource function post calculate_dsi(http:Caller caller, http:Request req) returns error? {
+        json payload = check req.getJsonPayload();
 
-    json|error? dsiResult = stakeholder_equilibrium:calculateDynamicStakeholderImpact(self.metricsAPIClient, stakeholders, deltaBehavior);
+        stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+        float[] deltaBehavior = check jsondata:parseAsType(check payload.deltaBehavior);
 
-    if dsiResult is json {
-        json response = { "Dynamic Stakeholder Impact (DSI)": dsiResult };
-        check caller->respond(response);
-    } else {
-        json response = { "error": dsiResult.message() };
-        check caller->respond(response);
+        json|error? dsiResult = stakeholder_equilibrium:calculateDynamicStakeholderImpact(self.metricsAPIClient, stakeholders, deltaBehavior);
+
+        if dsiResult is json {
+            json response = {"Dynamic Stakeholder Impact (DSI)": dsiResult};
+            check caller->respond(response);
+        } else {
+            json response = {"error": dsiResult.message()};
+            check caller->respond(response);
+        }
     }
-}
 
-// Calculate SNS 
+    // Calculate SNS 
 
-resource function post calculate_sns(http:Caller caller, http:Request req) returns error? {
-    json payload = check req.getJsonPayload();
+    resource function post calculate_sns(http:Caller caller, http:Request req) returns error? {
+        json payload = check req.getJsonPayload();
 
-    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
-    float[] deltaBehavior = check jsondata:parseAsType(check payload.deltaBehavior);
+        stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+        float[] deltaBehavior = check jsondata:parseAsType(check payload.deltaBehavior);
 
-    json|error? snsResult = stakeholder_equilibrium:calculateStakeholderNetworkStability(self.metricsAPIClient, stakeholders, deltaBehavior);
+        json|error? snsResult = stakeholder_equilibrium:calculateStakeholderNetworkStability(self.metricsAPIClient, stakeholders, deltaBehavior);
 
-    if snsResult is json {
-        json response = { "Stakeholder Network Stability (SNS)": snsResult };
-        check caller->respond(response);
-    } else {
-        json response = { "error": snsResult.message() };
-        check caller->respond(response);
+        if snsResult is json {
+            json response = {"Stakeholder Network Stability (SNS)": snsResult};
+            check caller->respond(response);
+        } else {
+            json response = {"error": snsResult.message()};
+            check caller->respond(response);
+        }
     }
-}
 
+    // Calculate SIS 
+    resource function post calculate_sis(http:Caller caller, http:Request req) returns error? {
+        json payload = check req.getJsonPayload();
 
-// Calculate SIS 
-resource function post calculate_sis(http:Caller caller, http:Request req) returns error? {
-    json payload = check req.getJsonPayload();
+        stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
 
-    stakeholder_equilibrium:Stakeholder[] stakeholders = check jsondata:parseAsType(check payload.stakeholders);
+        json|error? sisResult = stakeholder_equilibrium:calculateSystemicInfluenceScore(self.metricsAPIClient, stakeholders);
 
-    json|error? sisResult = stakeholder_equilibrium:calculateSystemicInfluenceScore(self.metricsAPIClient, stakeholders);
-
-    if sisResult is json {
-        json response = { "Systemic Influence Score (SIS)": sisResult };
-        check caller->respond(response);
-    } else {
-        json response = { "error": sisResult.message() };
-        check caller->respond(response);
+        if sisResult is json {
+            json response = {"Systemic Influence Score (SIS)": sisResult};
+            check caller->respond(response);
+        } else {
+            json response = {"error": sisResult.message()};
+            check caller->respond(response);
+        }
     }
-}
 
     // resource function post registerStakeholder(http:Caller caller, Stakeholder stakeholder) returns error? {
     //     sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
@@ -502,7 +573,6 @@ resource function post calculate_sis(http:Caller caller, http:Request req) retur
         check resultStream.close();
         return types;
     }
-
 
     function checkIfEmailExists(string email_address) returns boolean|error {
     stream<record {}, sql:Error?> resultStream = self.dbClient->query(`SELECT 1 FROM stakeholders WHERE email_address = ${email_address}`);
