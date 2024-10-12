@@ -3,7 +3,7 @@ import ballerina/sql;
 // OAuth2 Configuration
 configurable string CLIENT_ID = ?;
 configurable string CLIENT_SECRET = ?;
-configurable string REDIRECT_URI = "http://localhost:3000/home";
+configurable string REDIRECT_URI = "http://localhost:3000/sign-in";
 configurable string TOKEN_URL = "https://oauth2.googleapis.com/token";
 configurable string AUTH_URL = "https://accounts.google.com/o/oauth2/auth";
 configurable string SCOPE = "https://www.googleapis.com/auth/userinfo.email";
@@ -29,13 +29,39 @@ function initDatabase(sql:Client dbClient) returns error? {
                                     role VARCHAR(40),
                                     created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
 
+    _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS stakeholder_types (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    type_name VARCHAR(50) NOT NULL
+                                )`);
+
+    _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS stakeholders (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    stakeholder_name VARCHAR(255) NOT NULL,
+                                    stakeholder_type INT,
+                                    description TEXT,
+                                    email_address VARCHAR(255) NOT NULL,
+                                    user_email VARCHAR(100),
+                                    FOREIGN KEY (stakeholder_type) REFERENCES stakeholder_types(id),
+                                    FOREIGN KEY (user_email) REFERENCES users(email)
+    )`);
+
     // Create meetings table for stakeholder meetings
     _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS meetings (
-                                    ID SERIAL PRIMARY KEY,
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
                                     title VARCHAR(100) NOT NULL,
                                     description TEXT,
                                     meeting_date DATE NOT NULL,
                                     meeting_time TIME NOT NULL,
-                                    location VARCHAR(100),
-                                    stakeholders TEXT)`);
-};
+                                    location VARCHAR(100))`);
+
+    // Create a junction table to link meetings and stakeholders (Many-to-Many relationship)
+   _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS meeting_stakeholders (
+                                    meeting_id INT NOT NULL,
+                                    stakeholder_id INT NOT NULL,
+                                    attended BOOLEAN NULL DEFAULT 0,
+                                    PRIMARY KEY (meeting_id, stakeholder_id),
+                                    FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE,
+                                    FOREIGN KEY (stakeholder_id) REFERENCES stakeholders(id) ON DELETE CASCADE
+                                )`);
+}
+
