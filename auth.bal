@@ -21,6 +21,7 @@ function getUserInfo(string accessToken) returns json|error {
     map<string> headers = {"Authorization": "Bearer " + accessToken};
 
     http:Response|error response = googleClient->get("/oauth2/v2/userinfo", headers);
+    
     if response is http:Response {
         json|error userInfo = response.getJsonPayload();
         if userInfo is json {
