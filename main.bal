@@ -391,25 +391,13 @@ service /api on new http:Listener(9091) {
         if authCode is string {
             log:printInfo("Received authorization code: " + authCode);
 
-            // Create the request payload as a URL-encoded string
             string requestBody = "code=" + authCode + "&client_id=" + CLIENT_ID +
                             "&client_secret=" + CLIENT_SECRET + "&redirect_uri=" + REDIRECT_URI +
                             "&grant_type=authorization_code";
 
-            // Create a new HTTP request and set headers
             http:Request tokenRequest = new;
             tokenRequest.setHeader("Content-Type", "application/x-www-form-urlencoded");
             tokenRequest.setPayload(requestBody);
-
-            // map<string> body = {
-            //     "code": authCode,
-            //     "client_id": CLIENT_ID,
-            //     "client_secret": CLIENT_SECRET,
-            //     "redirect_uri": REDIRECT_URI,
-            //     "grant_type": "authorization_code"
-            // };
-
-            // tokenRequest.setPayload(body);
 
             http:Client tokenClient = check new (TOKEN_URL);
             http:Response|error tokenResponse = tokenClient->post("", tokenRequest);
@@ -417,41 +405,41 @@ service /api on new http:Listener(9091) {
             if tokenResponse is http:Response {
                 json|error jsonResponse = tokenResponse.getJsonPayload();
                 if jsonResponse is json {
-                    io:println("Im in 3 :", jsonResponse);
-                    // Check for the "access_token" field in the JSON response
-                    if jsonResponse.access_token is string {
+
+                    if jsonResponse.access_token is string && jsonResponse.refresh_token is string {
                         string accessToken = (check jsonResponse.access_token).toString();
-                        log:printInfo("Access Token: " + accessToken);
+                        string refreshToken = (check jsonResponse.refresh_token).toString();
 
                         json userInfo = check getUserInfo(accessToken);
 
                         string email = check getEmailFromAccessToken(accessToken);
                         log:printInfo("User email: " + email);
 
-                        // Check if the user exists or register a new user
                         if email != "" && !self.checkUserExists(email) {
-                            io:println("Im in 4");
-                            // Register new user if not exist
                             string userName = (check userInfo.name).toString();
-                            string address = (check userInfo.address).toString();
-                            string country = (check userInfo.country).toString();
-                            string contactNumber = (check userInfo.phone).toString();
-
-                            // Generate a random password using UUID
                             string password = uuid:createType1AsString();
 
-                            // Insert user details into the database
                             sql:ParameterizedQuery query = `INSERT INTO users 
-                            (address, country, administratorName, email, contactNumber, username, password) VALUES 
-                            (${address}, ${country}, ${userName}, ${email}, ${contactNumber}, ${userName}, ${password})`;
+                            (administratorName, email, username, password) VALUES 
+                            (${userName}, ${email}, ${userName}, ${password})`;
 
                             sql:ExecutionResult _ = check self.dbClient->execute(query);
                             log:printInfo("New user registered: " + email);
 
-                            json response = {status: "User successfully registered!", user_email: email};
+                            json response = {
+                                status: "User successfully registered!",
+                                user_email: email,
+                                access_token: accessToken,
+                                refresh_token: refreshToken
+                            };
                             check caller->respond(response);
                         } else {
-                            json response = {status: "User already exists!", user_email: email};
+                            json response = {
+                                status: "User already exists!",
+                                user_email: email,
+                                access_token: accessToken,
+                                refresh_token: refreshToken
+                            };
                             check caller->respond(response);
                         }
                     } else {
@@ -462,6 +450,63 @@ service /api on new http:Listener(9091) {
             }
         } else {
             check caller->respond("Authorization failed!");
+        }
+    }
+
+    resource function post getEmailFromRefreshToken(http:Caller caller, string accessToken) returns error? {
+        string user_email = check getEmailFromAccessToken(accessToken);
+        json response = {
+            user_email: user_email
+        };
+        check caller->respond(response);
+    }
+
+    // Function to handle refreshing the access token using the refresh token
+    resource function post refreshToken(http:Caller caller, http:Request req) returns error? {
+        json|error reqPayload = req.getJsonPayload();
+        if reqPayload is json {
+            string? refreshToken = (check reqPayload.refresh_token).toString();
+            if refreshToken is string {
+                log:printInfo("Received refresh token: " + refreshToken);
+
+                string requestBody = "client_id=" + CLIENT_ID +
+                            "&client_secret=" + CLIENT_SECRET +
+                            "&refresh_token=" + refreshToken +
+                            "&grant_type=refresh_token";
+
+                http:Request tokenRequest = new;
+                tokenRequest.setHeader("Content-Type", "application/x-www-form-urlencoded");
+                tokenRequest.setPayload(requestBody);
+
+                http:Client tokenClient = check new (TOKEN_URL);
+                http:Response|error tokenResponse = tokenClient->post("", tokenRequest);
+
+                if tokenResponse is http:Response {
+                    json|error jsonResponse = tokenResponse.getJsonPayload();
+                    if jsonResponse is json {
+                        if jsonResponse.access_token is string {
+                            string newAccessToken = (check jsonResponse.access_token).toString();
+                            log:printInfo("New access token received: " + newAccessToken);
+
+                            json response = {
+                                status: "Token refreshed successfully",
+                                access_token: newAccessToken
+                            };
+                            check caller->respond(response);
+                        } else {
+                            check caller->respond("Failed to retrieve new access token.");
+                        }
+                    } else {
+                        check caller->respond("Failed to parse response from token server.");
+                    }
+                } else {
+                    check caller->respond("Failed to request new access token from server.");
+                }
+            } else {
+                check caller->respond("Refresh token is missing.");
+            }
+        } else {
+            check caller->respond("Invalid request payload.");
         }
     }
 
