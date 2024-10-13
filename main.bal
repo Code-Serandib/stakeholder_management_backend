@@ -237,8 +237,9 @@ service /api on new http:Listener(9091) {
 
                         json userInfo = check getUserInfo(accessToken);
 
-                        string email = check getEmailFromAccessToken(accessToken);
+                        string email = (check userInfo.email).toString();
                         log:printInfo("User email: " + email);
+                        log:printInfo("userInfo: " + userInfo.toBalString());
 
                         if email != "" && !self.checkUserExists(email) {
                             string userName = (check userInfo.name).toString();
@@ -278,12 +279,55 @@ service /api on new http:Listener(9091) {
         }
     }
 
-    resource function post getEmailFromRefreshToken(http:Caller caller, string accessToken) returns error? {
-        string user_email = check getEmailFromAccessToken(accessToken);
-        json response = {
-            user_email: user_email
-        };
-        check caller->respond(response);
+    resource function post getUserDataFromAccessToken(http:Caller caller, http:Request req) returns error? {
+        // var accessToken = req.getHeader("accessToken");
+        // if accessToken is string {
+        json|error reqPayload = req.getJsonPayload();
+        if reqPayload is json {
+            string? accessToken = (check reqPayload.accessToken).toString();
+            if accessToken is string {
+            json userInfo = check getUserInfo(accessToken);
+
+            string email = (check userInfo.email).toString();
+            string profilePicture = (check userInfo.picture).toString();
+
+            stream<record {}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
+
+            check from record {} users in resultStream
+                do {
+                    io:println("Student name: ", users);
+                    Users user = {
+                        organizationName: users["organizationName"].toString(),
+                        organizationType: users["organizationType"].toString(),
+                        industry: users["industry"].toString(),
+                        address: users["address"].toString(),
+                        country: users["country"].toString(),
+                        administratorName: users["administratorName"].toString(),
+                        email: users["email"].toString(),
+                        contactNumber: users["contactNumber"].toString(),
+                        role: users["role"].toString(),
+                        username: users["username"].toString(),
+                        password: users["password"].toString()
+                    };
+                    json response = {
+                        user: user,
+                        user_email: email,
+                        profilePicture: profilePicture
+                    };
+                    check caller->respond(response);
+                    // return user;
+                };
+
+            json response = {
+                profilePicture: profilePicture,
+                user_email: email
+            };
+            // json response = {
+            //     message: "test message"
+            // };
+            check caller->respond(response);
+            }
+        }
     }
 
     // Function to handle refreshing the access token using the refresh token
@@ -349,7 +393,6 @@ service /api on new http:Listener(9091) {
         if email is string {
             io:println("Received email: " + email.toBalString());
             stream<record {}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
-            io:println("Received dsta: " + resultStream.toBalString());
 
             check from record {} users in resultStream
                 do {
