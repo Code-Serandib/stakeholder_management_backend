@@ -63,3 +63,27 @@ type TransformedQuestion record {
     string questionType;
     string[] choices?;
 };
+
+type Response record {
+    int id;
+    int stakeholder_id;
+    int survey_id;
+    int question_id;
+    string response_text;
+};
+
+type AllResponse record {
+    Response response;
+    Stakeholder stakeholder;
+    Survey survey;
+    Question question;
+};
+
+type TransformedResponse record {
+    int id;
+    int stakeholderId;
+    int surveyId;
+    int questionId;
+    string responseText;
+};
+

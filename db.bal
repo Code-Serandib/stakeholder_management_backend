@@ -49,8 +49,10 @@ function initDatabase(sql:Client dbClient) returns error? {
     title VARCHAR(255) NOT NULL,
     description TEXT,
     status INT DEFAULT 1,
+    user_email VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_email) REFERENCES users(email) ON DELETE CASCADE
 )`);
 
     _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS questions (
@@ -77,6 +79,7 @@ function initDatabase(sql:Client dbClient) returns error? {
     survey_id INT NOT NULL,
     question_id INT NOT NULL,
     response_text TEXT NOT NULL,  -- Stores the actual response
+    status INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (survey_id) REFERENCES surveys(id) ON DELETE CASCADE,
     FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE,

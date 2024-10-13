@@ -630,7 +630,7 @@ service /api on new http:Listener(9091) {
     // Get all surveys
     resource function get allSurveys() returns Survey[]|error {
         Survey[] surveys = [];
-        sql:ParameterizedQuery query = `SELECT * FROM surveys WHERE status = '1'`;
+        sql:ParameterizedQuery query = `SELECT * FROM surveys WHERE status = '1' `;
         stream<Survey, sql:Error?> resultStream = self.dbClient->query(query);
 
         check from Survey survey in resultStream
@@ -663,28 +663,6 @@ service /api on new http:Listener(9091) {
             return error("Survey not found");
         }
     }
-
-    // // Get all surveys
-    // resource function get allSurveys(http:Caller caller, http:Request req) returns error? {
-    //     sql:ParameterizedQuery query = `SELECT * FROM surveys`;
-    //     stream<record {|int id; string title; string description;|}, sql:Error?> resultStream = surveyDB->query(query);
-
-    //     json[] surveys = [];
-    //     // record {|int id; string title; string description;|} survey;
-
-    //     // Use next() method to iterate through the result stream
-    //     while true {
-    //         var result = resultStream.next();
-    //         if result is record {|record {|int id; string title; string description;|} value;|} {
-    //             surveys.push(result.value);
-    //         } else {
-    //             break;
-    //         }
-    //     }
-
-    //     check resultStream.close();
-    //     check caller->respond(surveys);
-    // }
 
     // // Get survey by ID
     // resource function get surveyById(http:Caller caller, http:Request req, int id) returns error? {
@@ -1005,5 +983,70 @@ service /api on new http:Listener(9091) {
         // Return a success message
         return;
     }
+
+    // Get all responses
+resource function get allResponses() returns TransformedResponse[]|error {
+    AllResponse[] allResponses = [];
+
+    // Query to get all responses
+    sql:ParameterizedQuery query = `SELECT * FROM responses`;
+    stream<Response, sql:Error?> resultStream = self.dbClient->query(query);
+
+    check from Response response in resultStream
+        do {
+            // Fetch the corresponding stakeholder for this response
+            sql:ParameterizedQuery stakeholderQuery = `SELECT * FROM stakeholders WHERE id = ${response.stakeholder_id}`;
+            Stakeholder? stakeholder = check self.dbClient->queryRow(stakeholderQuery);
+
+            // Fetch the corresponding survey for this response
+            sql:ParameterizedQuery surveyQuery = `SELECT * FROM surveys WHERE id = ${response.survey_id}`;
+            Survey? survey = check self.dbClient->queryRow(surveyQuery);
+
+            // Fetch the corresponding question for this response
+            sql:ParameterizedQuery questionQuery = `SELECT * FROM questions WHERE id = ${response.question_id}`;
+            Question? question = check self.dbClient->queryRow(questionQuery);
+
+            // Ensure that stakeholder, survey, and question exist
+            if (stakeholder is Stakeholder && survey is Survey && question is Question) {
+                AllResponse allResponse = {
+                    response: response,
+                    stakeholder: stakeholder,
+                    survey: survey,
+                    question: question
+                };
+
+                // Push the response and its related data to the final list
+                allResponses.push(allResponse);
+            }
+        };
+
+    // Close the result stream for responses
+    check resultStream.close();
+
+    // Transform responses to the desired output format
+    TransformedResponse[] transformedResponses = self.transformResponses(allResponses);
+
+    return transformedResponses;
+}
+
+// Function to transform responses into the desired format
+public function transformResponses(AllResponse[] allResponses) returns TransformedResponse[] {
+    TransformedResponse[] transformedResponses = [];
+
+    foreach var item in allResponses {
+        TransformedResponse transformedResponse = {
+            id: item.response.id,
+            stakeholderId: item.response.stakeholder_id,
+            surveyId: item.response.survey_id,
+            questionId: item.response.question_id,
+            responseText: item.response.response_text
+        };
+
+        transformedResponses.push(transformedResponse);
+    }
+
+    return transformedResponses;
+}
+
 
 }

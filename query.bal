@@ -56,7 +56,8 @@ function stakeholderRegisterParameterizedQuery(Stakeholder stakeholder) returns 
 
 function getAllStakeholderParameterizedQuery(string user_email) returns sql:ParameterizedQuery {
 
-    sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE user_email = ${user_email}`;
+    // sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE user_email = ${user_email}`;
+    sql:ParameterizedQuery query = `SELECT * FROM stakeholders `;
     return query;
 };
 
