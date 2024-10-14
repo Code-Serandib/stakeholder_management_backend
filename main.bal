@@ -1,4 +1,5 @@
 import stakeholder_management_backend.engagement_metrics;
+import stakeholder_management_backend.meetings;
 import stakeholder_management_backend.risk_modeling;
 import stakeholder_management_backend.stakeholder_equilibrium;
 import stakeholder_management_backend.theoretical_depth;
@@ -12,6 +13,10 @@ import ballerina/sql;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
+
+type rowType record {
+
+};
 
 @http:ServiceConfig {
     cors: {
@@ -30,6 +35,24 @@ service /api on new http:Listener(9091) {
         self.metricsAPIClient = check new ("http://localhost:9090/stakeholder-analytics");
         self.dbClient = check new jdbc:Client(jdbcUrl);
         check initDatabase(self.dbClient);
+    }
+
+    @http:ResourceConfig {
+        auth: [
+            {
+                jwtValidatorConfig: {
+                    issuer: "codeserandib",
+                    audience: "users",
+                    signatureConfig: {
+                        certFile: "resources/codeserandib.crt"
+                    }
+                }
+            }
+        ]
+    }
+    resource function get data(http:RequestContext ctx) returns error? {
+        [jwt:Header, jwt:Payload] jwtInfo = check ctx.getWithType(http:JWT_INFORMATION);
+        io:println(jwtInfo);
     }
 
     //risk score
@@ -202,6 +225,158 @@ service /api on new http:Listener(9091) {
         }
     }
 
+    //meetings
+    resource function post schedule_meeting(meetings:NewMeeting newMeeting) returns meetings:MeetingCreated|error? {
+        transaction {
+            sql:ExecutionResult result = check self.dbClient->execute(`
+            INSERT INTO meetings (title, description, meeting_date, meeting_time, location)
+            VALUES (${newMeeting.title}, ${newMeeting.description}, ${newMeeting.meeting_date}, ${newMeeting.meeting_time}, ${newMeeting.location})
+        `);
+
+            int|string? lastInsertId = result.lastInsertId;
+
+            if lastInsertId is int {
+                int meetingId = lastInsertId;
+
+                foreach int stakeholderId in newMeeting.stakeholders {
+                    _ = check self.dbClient->execute(`
+                    INSERT INTO meeting_stakeholders (meeting_id, stakeholder_id)
+                    VALUES (${meetingId}, ${stakeholderId})
+                `);
+                }
+
+                check commit;
+
+                return <meetings:MeetingCreated>{
+                    body: {
+                        id: meetingId,
+                        ...newMeeting
+                    }
+                };
+            } else {
+                rollback;
+                return error("Error occurred while retrieving the last insert ID");
+            }
+        }
+    }
+
+    // Get all upcoming meetings
+    resource function get upcoming_meetings() returns meetings:MeetingRecord[]|error {
+        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
+    M.meeting_time, M.location, 
+    GROUP_CONCAT(S.stakeholder_name) AS stakeholders 
+    FROM meetings M 
+    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
+    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id 
+    WHERE M.meeting_date >= CURRENT_DATE 
+    GROUP BY M.id, M.title, M.description, M.meeting_date, M.meeting_time, M.location 
+    ORDER BY M.meeting_date ASC;`;
+
+        stream<meetings:MeetingRecord, sql:Error?> meetingStream = self.dbClient->query(query);
+        return from meetings:MeetingRecord meeting in meetingStream
+            select meeting;
+    }
+
+    // Get all meetings
+    resource function get all_meetings() returns meetings:MeetingRecord[]|error {
+        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
+       M.meeting_time, M.location, 
+       GROUP_CONCAT(S.id, ':', S.stakeholder_name) AS stakeholders 
+        FROM meetings M 
+    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
+    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id
+    GROUP BY M.id
+    ORDER BY M.meeting_date ASC`;
+        stream<meetings:MeetingRecord, sql:Error?> meetingStream = self.dbClient->query(query);
+        return from meetings:MeetingRecord meeting in meetingStream
+            select meeting;
+    }
+
+    // Get a single meeting by ID
+    resource function get meetings/[int id]() returns meetings:MeetingRecord|http:NotFound {
+        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
+    M.meeting_time, M.location, 
+    GROUP_CONCAT(S.id, ':', S.stakeholder_name) AS stakeholders 
+    FROM meetings M 
+    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
+    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id 
+    WHERE M.id = ${id} 
+    GROUP BY M.id, M.title, M.description, M.meeting_date, M.meeting_time, M.location;`;
+
+        meetings:MeetingRecord|error meeting = self.dbClient->queryRow(query);
+        return meeting is meetings:MeetingRecord ? meeting : http:NOT_FOUND;
+    }
+
+    //mark attendance
+    resource function post mark_attendance(meetings:AttendaceRecord attendanceRecord) returns error? {
+        sql:ParameterizedQuery query = `UPDATE meeting_stakeholders 
+                                     SET attended = ${attendanceRecord.attended} 
+                                     WHERE meeting_id = ${attendanceRecord.meetingId} AND stakeholder_id = ${attendanceRecord.stakeholderId}`;
+        _ = check self.dbClient->execute(query);
+    }
+
+    // get All attendance
+    resource function get attendance/[int meetingId]() returns meetings:Attendace[]|error {
+        sql:ParameterizedQuery query = `SELECT stakeholder_id,attended FROM meeting_stakeholders
+                                     WHERE meeting_id = ${meetingId}`;
+        stream<meetings:Attendace, sql:Error?> attendanceStream = self.dbClient->query(query);
+        return from meetings:Attendace atendance in attendanceStream
+            select atendance;
+    }
+
+    resource function get meetingCountByMonth() returns meetings:MeetingCount[]|error {
+        sql:ParameterizedQuery query = `
+        SELECT 
+            MONTHNAME(MIN(M.meeting_date)) AS month,
+            YEAR(MIN(M.meeting_date)) AS year,
+            COUNT(M.id) AS count,
+            MIN(M.meeting_date) AS order_date
+        FROM meetings M
+        WHERE M.meeting_date <= CURRENT_DATE
+        AND YEAR(M.meeting_date) = YEAR(CURRENT_DATE)
+        GROUP BY YEAR(M.meeting_date), MONTH(M.meeting_date)
+        ORDER BY order_date
+    `;
+
+        stream<meetings:MeetingCount, sql:Error?> meetingStream = self.dbClient->query(query);
+        return from meetings:MeetingCount meeting in meetingStream
+            select meeting;
+    }
+
+    // Get total meetings count
+    resource function get totalMeetingsCount() returns int|error {
+        sql:ParameterizedQuery query = `
+        SELECT COUNT(*) AS total_count
+        FROM meetings
+    `;
+
+        record {|int total_count;|}|sql:Error result = self.dbClient->queryRow(query);
+
+        if result is record {|int total_count;|} {
+            return result.total_count;
+        } else {
+            return error("Failed to retrieve total meetings count");
+        }
+    }
+
+    // Get total stakeholders count
+    resource function get totalStakeholdersCount() returns int|error {
+        sql:ParameterizedQuery query = `
+        SELECT COUNT(DISTINCT stakeholder_id) AS total_count
+        FROM meeting_stakeholders
+    `;
+
+        record {|int total_count;|}|sql:Error result = self.dbClient->queryRow(query);
+
+        if result is record {|int total_count;|} {
+            return result.total_count;
+        } else {
+            return error("Failed to retrieve total stakeholders count");
+        }
+    }
+
+    //meetings
+
     resource function get googleLogin(http:Caller caller, http:Request req) returns error? {
         http:Response redirectResponse = new;
         redirectResponse.setHeader("Location", authorizationUrl);
@@ -216,25 +391,13 @@ service /api on new http:Listener(9091) {
         if authCode is string {
             log:printInfo("Received authorization code: " + authCode);
 
-            // Create the request payload as a URL-encoded string
             string requestBody = "code=" + authCode + "&client_id=" + CLIENT_ID +
                             "&client_secret=" + CLIENT_SECRET + "&redirect_uri=" + REDIRECT_URI +
                             "&grant_type=authorization_code";
 
-            // Create a new HTTP request and set headers
             http:Request tokenRequest = new;
             tokenRequest.setHeader("Content-Type", "application/x-www-form-urlencoded");
             tokenRequest.setPayload(requestBody);
-
-            // map<string> body = {
-            //     "code": authCode,
-            //     "client_id": CLIENT_ID,
-            //     "client_secret": CLIENT_SECRET,
-            //     "redirect_uri": REDIRECT_URI,
-            //     "grant_type": "authorization_code"
-            // };
-
-            // tokenRequest.setPayload(body);
 
             http:Client tokenClient = check new (TOKEN_URL);
             http:Response|error tokenResponse = tokenClient->post("", tokenRequest);
@@ -242,41 +405,42 @@ service /api on new http:Listener(9091) {
             if tokenResponse is http:Response {
                 json|error jsonResponse = tokenResponse.getJsonPayload();
                 if jsonResponse is json {
-                    io:println("Im in 3 :", jsonResponse);
-                    // Check for the "access_token" field in the JSON response
-                    if jsonResponse.access_token is string {
+
+                    if jsonResponse.access_token is string && jsonResponse.refresh_token is string {
                         string accessToken = (check jsonResponse.access_token).toString();
-                        log:printInfo("Access Token: " + accessToken);
+                        string refreshToken = (check jsonResponse.refresh_token).toString();
 
                         json userInfo = check getUserInfo(accessToken);
 
-                        string email = check getEmailFromAccessToken(accessToken);
+                        string email = (check userInfo.email).toString();
                         log:printInfo("User email: " + email);
+                        log:printInfo("userInfo: " + userInfo.toBalString());
 
-                        // Check if the user exists or register a new user
                         if email != "" && !self.checkUserExists(email) {
-                            io:println("Im in 4");
-                            // Register new user if not exist
                             string userName = (check userInfo.name).toString();
-                            string address = (check userInfo.address).toString();
-                            string country = (check userInfo.country).toString();
-                            string contactNumber = (check userInfo.phone).toString();
-
-                            // Generate a random password using UUID
                             string password = uuid:createType1AsString();
 
-                            // Insert user details into the database
                             sql:ParameterizedQuery query = `INSERT INTO users 
-                            (address, country, administratorName, email, contactNumber, username, password) VALUES 
-                            (${address}, ${country}, ${userName}, ${email}, ${contactNumber}, ${userName}, ${password})`;
+                            (administratorName, email, username, password) VALUES 
+                            (${userName}, ${email}, ${userName}, ${password})`;
 
                             sql:ExecutionResult _ = check self.dbClient->execute(query);
                             log:printInfo("New user registered: " + email);
 
-                            json response = {status: "User successfully registered!", user_email: email};
+                            json response = {
+                                status: "User successfully registered!",
+                                user_email: email,
+                                access_token: accessToken,
+                                refresh_token: refreshToken
+                            };
                             check caller->respond(response);
                         } else {
-                            json response = {status: "User already exists!", user_email: email};
+                            json response = {
+                                status: "User already exists!",
+                                user_email: email,
+                                access_token: accessToken,
+                                refresh_token: refreshToken
+                            };
                             check caller->respond(response);
                         }
                     } else {
@@ -287,6 +451,106 @@ service /api on new http:Listener(9091) {
             }
         } else {
             check caller->respond("Authorization failed!");
+        }
+    }
+
+    resource function post getUserDataFromAccessToken(http:Caller caller, http:Request req) returns error? {
+        // var accessToken = req.getHeader("accessToken");
+        // if accessToken is string {
+        json|error reqPayload = req.getJsonPayload();
+        if reqPayload is json {
+            string? accessToken = (check reqPayload.accessToken).toString();
+            if accessToken is string {
+            json userInfo = check getUserInfo(accessToken);
+
+            string email = (check userInfo.email).toString();
+            string profilePicture = (check userInfo.picture).toString();
+
+            stream<record {}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
+
+            check from record {} users in resultStream
+                do {
+                    io:println("Student name: ", users);
+                    Users user = {
+                        organizationName: users["organizationName"].toString(),
+                        organizationType: users["organizationType"].toString(),
+                        industry: users["industry"].toString(),
+                        address: users["address"].toString(),
+                        country: users["country"].toString(),
+                        administratorName: users["administratorName"].toString(),
+                        email: users["email"].toString(),
+                        contactNumber: users["contactNumber"].toString(),
+                        role: users["role"].toString(),
+                        username: users["username"].toString(),
+                        password: users["password"].toString()
+                    };
+                    json response = {
+                        user: user,
+                        user_email: email,
+                        profilePicture: profilePicture
+                    };
+                    check caller->respond(response);
+                    // return user;
+                };
+
+            json response = {
+                profilePicture: profilePicture,
+                user_email: email
+            };
+            // json response = {
+            //     message: "test message"
+            // };
+            check caller->respond(response);
+            }
+        }
+    }
+
+    // Function to handle refreshing the access token using the refresh token
+    resource function post refreshToken(http:Caller caller, http:Request req) returns error? {
+        json|error reqPayload = req.getJsonPayload();
+        if reqPayload is json {
+            string? refreshToken = (check reqPayload.refresh_token).toString();
+            if refreshToken is string {
+                log:printInfo("Received refresh token: " + refreshToken);
+
+                string requestBody = "client_id=" + CLIENT_ID +
+                            "&client_secret=" + CLIENT_SECRET +
+                            "&refresh_token=" + refreshToken +
+                            "&grant_type=refresh_token";
+
+                http:Request tokenRequest = new;
+                tokenRequest.setHeader("Content-Type", "application/x-www-form-urlencoded");
+                tokenRequest.setPayload(requestBody);
+
+                http:Client tokenClient = check new (TOKEN_URL);
+                http:Response|error tokenResponse = tokenClient->post("", tokenRequest);
+
+                if tokenResponse is http:Response {
+                    json|error jsonResponse = tokenResponse.getJsonPayload();
+                    if jsonResponse is json {
+                        if jsonResponse.access_token is string {
+                            string newAccessToken = (check jsonResponse.access_token).toString();
+                            log:printInfo("New access token received: " + newAccessToken);
+
+                            json response = {
+                                status: "Token refreshed successfully",
+                                access_token: newAccessToken
+                            };
+                            check caller->respond(response);
+                        } else {
+                            check caller->respond("Failed to retrieve new access token.");
+                        }
+                    } else {
+                        check caller->respond("Failed to parse response from token server.");
+                    }
+                } else {
+                    check caller->respond("Failed to request new access token from server.");
+                }
+            } else {
+                check caller->respond("Refresh token is missing.");
+            }
+        } else {
+            check caller->respond("Invalid request payload.");
         }
     }
 

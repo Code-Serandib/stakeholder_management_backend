@@ -43,7 +43,7 @@ function getUserData(string email) returns sql:ParameterizedQuery {
 
 function stakeholderRegisterParameterizedQuery(Stakeholder stakeholder) returns sql:ParameterizedQuery {
     string stakeholder_name = stakeholder.stakeholder_name;
-    int stakeholder_type =  stakeholder.stakeholder_type;
+    int stakeholder_type = stakeholder.stakeholder_type;
     string description = stakeholder.description;
     string email_address = stakeholder.email_address;
     string user_email = stakeholder.user_email;
@@ -69,7 +69,7 @@ function sortStakeholdersByTypeParameterizedQuery(string type_id, string user_em
 
 function searchStakeholderByEmailParameterizedQuery(string email_address, string user_email) returns sql:ParameterizedQuery {
 
-    string searchEmail = "%" + email_address + "%";  // Concatenate % symbols for the LIKE clause
+    string searchEmail = "%" + email_address + "%"; // Concatenate % symbols for the LIKE clause
 
     sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE email_address LIKE ${searchEmail} AND user_email = ${user_email}`;
     return query;
@@ -81,3 +81,4 @@ function allQuestionParameterizedQuery(string user_email) returns sql:Parameteri
     sql:ParameterizedQuery query = `SELECT * FROM questions WHERE status = '1' AND survey_id IN (SELECT id as survey_id FROM surveys WHERE user_email IN (${email}) and status = '1')`;
     return query;
 };
+
