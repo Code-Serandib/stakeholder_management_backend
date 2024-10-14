@@ -87,3 +87,25 @@ type TransformedResponse record {
     string responseText;
 };
 
+type Submission record {
+    int id;
+    int stakeholder_id;
+    int survey_id;
+    string submitted_at;
+};
+
+type AllSubmission record {
+    Submission submission;
+    Stakeholder stakeholder;
+    Survey survey;
+};
+
+type TransformedSubmission record {
+    int id;
+    int stakeholderId;
+    int surveyId;
+    string stakeholderName;
+    string surveyTitle;
+    string submittedAt;
+};
+

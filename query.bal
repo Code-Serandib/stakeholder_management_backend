@@ -57,7 +57,7 @@ function stakeholderRegisterParameterizedQuery(Stakeholder stakeholder) returns 
 function getAllStakeholderParameterizedQuery(string user_email) returns sql:ParameterizedQuery {
 
     // sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE user_email = ${user_email}`;
-    sql:ParameterizedQuery query = `SELECT * FROM stakeholders `;
+    sql:ParameterizedQuery query = `SELECT * FROM stakeholders s JOIN stakeholder_types st ON s.stakeholder_type= st.id WHERE user_email = ${user_email}`;
     return query;
 };
 
@@ -72,5 +72,12 @@ function searchStakeholderByEmailParameterizedQuery(string email_address, string
     string searchEmail = "%" + email_address + "%";  // Concatenate % symbols for the LIKE clause
 
     sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE email_address LIKE ${searchEmail} AND user_email = ${user_email}`;
+    return query;
+};
+
+function allQuestionParameterizedQuery(string user_email) returns sql:ParameterizedQuery {
+    string email = user_email.toString();
+
+    sql:ParameterizedQuery query = `SELECT * FROM questions WHERE status = '1' AND survey_id IN (SELECT id as survey_id FROM surveys WHERE user_email IN (${email}) and status = '1')`;
     return query;
 };
