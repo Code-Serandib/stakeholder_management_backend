@@ -64,7 +64,6 @@ function initDatabase(sql:Client dbClient) returns error? {
                                     FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE,
                                     FOREIGN KEY (stakeholder_id) REFERENCES stakeholders(id) ON DELETE CASCADE
                                 )`);
-}
 
     _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS surveys (
     id INT AUTO_INCREMENT PRIMARY KEY,
