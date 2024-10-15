@@ -455,8 +455,6 @@ service /api on new http:Listener(9091) {
     }
 
     resource function post getUserDataFromAccessToken(http:Caller caller, http:Request req) returns error? {
-        // var accessToken = req.getHeader("accessToken");
-        // if accessToken is string {
         json|error reqPayload = req.getJsonPayload();
         if reqPayload is json {
             string? accessToken = (check reqPayload.accessToken).toString();
@@ -490,16 +488,12 @@ service /api on new http:Listener(9091) {
                         profilePicture: profilePicture
                     };
                     check caller->respond(response);
-                    // return user;
                 };
 
             json response = {
                 profilePicture: profilePicture,
                 user_email: email
             };
-            // json response = {
-            //     message: "test message"
-            // };
             check caller->respond(response);
             }
         }
@@ -747,20 +741,13 @@ service /api on new http:Listener(9091) {
         }
     }
 
-    // resource function post registerStakeholder(http:Caller caller, Stakeholder stakeholder) returns error? {
-    //     sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
-    //     check caller->respond("Successfully Added");
-    // }
-
     resource function post registerStakeholder(http:Caller caller, http:Request req) returns error? {
         json payload = check req.getJsonPayload();
         Stakeholder stakeholder = check payload.cloneWithType(Stakeholder);
 
-        // Check if the email already exists
         boolean emailExists = check self.checkIfEmailExists(stakeholder.email_address);
 
         if (emailExists) {
-            // Respond with a conflict message
             check caller->respond({
                 statusCode: 409,
                 message: "Email already exists. Please use a different email address."
@@ -794,7 +781,6 @@ service /api on new http:Listener(9091) {
     // Function to get all stakeholders
     function getAllStakeholders(string user_email) returns Stakeholder[]|error {
         Stakeholder[] stakeholders = [];
-        // sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE user_email = ${user_email}`;
         stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(getAllStakeholderParameterizedQuery(user_email));
 
         check from Stakeholder stakeholder in resultStream
@@ -844,10 +830,9 @@ service /api on new http:Listener(9091) {
         var result = check resultStream.next();
 
         if result is record {} {
-            // Email exists
             return true;
         }
 
-        return false; // Email doesn't exist
+        return false; 
     }
 }

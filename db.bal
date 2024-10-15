@@ -6,7 +6,6 @@ configurable string CLIENT_SECRET = ?;
 configurable string REDIRECT_URI = "http://localhost:3000/sign-in";
 configurable string TOKEN_URL = "https://oauth2.googleapis.com/token";
 configurable string AUTH_URL = "https://accounts.google.com/o/oauth2/auth";
-// configurable string SCOPE = "https://www.googleapis.com/auth/userinfo.email";
 configurable string SCOPE = "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email";
 configurable string DB_URL = ?;
 configurable string DB_USERNAME = ?;
