@@ -5,6 +5,7 @@ import stakeholder_management_backend.stakeholder_equilibrium;
 import stakeholder_management_backend.theoretical_depth;
 
 import ballerina/data.jsondata;
+import ballerina/email;
 import ballerina/http;
 import ballerina/io;
 import ballerina/jwt;
@@ -14,14 +15,14 @@ import ballerina/uuid;
 import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
 
-type rowType record {
-
-};
+configurable string SMTP_EMAIL = ?;
+configurable string SMTP_USERNAME = ?;
+configurable string SMTP_PASSWORD = ?;
 
 @http:ServiceConfig {
     cors: {
         allowOrigins: ["http://localhost:3000"],
-        allowMethods: ["GET", "POST", "OPTIONS"],
+        allowMethods: ["GET", "PUT", "POST", "DELETE", "OPTIONS"],
         allowHeaders: ["Authorization", "Content-Type"],
         allowCredentials: true
     }
@@ -30,11 +31,19 @@ service /api on new http:Listener(9091) {
 
     final http:Client metricsAPIClient;
     final sql:Client dbClient;
+    final email:SmtpClient emailClient;
 
     function init() returns error? {
         self.metricsAPIClient = check new ("http://localhost:9090/stakeholder-analytics");
         self.dbClient = check new jdbc:Client(jdbcUrl);
         check initDatabase(self.dbClient);
+
+        email:SmtpConfiguration smtpConfig = {
+            port: 2525,
+            security: email:START_TLS_AUTO
+        };
+
+        self.emailClient = check new (SMTP_EMAIL, SMTP_USERNAME, SMTP_PASSWORD, smtpConfig);
     }
 
     @http:ResourceConfig {
@@ -57,118 +66,32 @@ service /api on new http:Listener(9091) {
 
     //risk score
     resource function post risk_score(http:Caller caller, risk_modeling:RiskInput riskInput) returns error? {
-
-        json|error? riskScore = risk_modeling:calculateRiskScore(self.metricsAPIClient, riskInput);
-
-        if riskScore is json {
-
-            json response = {"riskScore": riskScore};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": riskScore.message()};
-            check caller->respond(response);
-
-        }
+        return risk_modeling:getRiskScore(caller, riskInput, self.metricsAPIClient);
     }
 
     //calculate_project_risk
     resource function post project_risk(http:Caller caller, http:Request req) returns error? {
-        json payload = check req.getJsonPayload();
-
-        risk_modeling:RiskInput[] riskInputs = check jsondata:parseAsType(check payload.riskInputs);
-        float[] influences = check jsondata:parseAsType(check payload.influences);
-
-        json|error? projectRisk = risk_modeling:calculateProjectRisk(self.metricsAPIClient, riskInputs, influences);
-
-        if projectRisk is json {
-
-            json response = {"projectRisk": projectRisk};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": projectRisk.message()};
-            check caller->respond(response);
-
-        }
+        return risk_modeling:getProjectRisk(caller, req, self.metricsAPIClient); 
     }
 
     //calculate_project_risk
     resource function post engagement_drop_alert(http:Caller caller, http:Request req) returns error? {
-        json payload = check req.getJsonPayload();
-
-        risk_modeling:RiskInput[] riskInputs = check jsondata:parseAsType(check payload.riskInputs);
-        float engamenetTreshold = check payload.Te;
-
-        json|error? engagementDropAlerts = risk_modeling:engagementDropAlert(self.metricsAPIClient, riskInputs, engamenetTreshold);
-
-        if engagementDropAlerts is json {
-
-            json response = {"engagementDropAlerts": engagementDropAlerts};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": engagementDropAlerts.message()};
-            check caller->respond(response);
-
-        }
+        return risk_modeling:getEngagementDropAlert(caller, req, self.metricsAPIClient); 
     }
 
     //calculate priority score
     resource function post priority_score(http:Caller caller, engagement_metrics:EPSInput epsInput) returns error? {
-
-        json|error? Eps = engagement_metrics:calculateEps(self.metricsAPIClient, epsInput);
-
-        if Eps is json {
-
-            json response = {"EpsResult": Eps};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": Eps.message()};
-            check caller->respond(response);
-
-        }
+        return engagement_metrics:getPriorityScore(caller, epsInput, self.metricsAPIClient);
     }
 
     //calculate balanced score metrics
     resource function post balanced_score(http:Caller caller, engagement_metrics:BSCInput bscInput) returns error? {
-
-        json|error? Bsc = engagement_metrics:calculateBsc(self.metricsAPIClient, bscInput);
-
-        if Bsc is json {
-
-            json response = {"BscResult": Bsc};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": Bsc.message()};
-            check caller->respond(response);
-
-        }
+        return engagement_metrics:getBalancedScore(caller, bscInput, self.metricsAPIClient);
     }
 
     //calculate total engament score
     resource function post engagement_score(http:Caller caller, engagement_metrics:TESInput tesInput) returns error? {
-
-        json|error? Tsc = engagement_metrics:calculateTes(self.metricsAPIClient, tesInput);
-
-        if Tsc is json {
-
-            json response = {"TscResult": Tsc};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": Tsc.message()};
-            check caller->respond(response);
-
-        }
+        return engagement_metrics:getEngagementScore(caller, tesInput, self.metricsAPIClient);
     }
 
     //influence_index
@@ -226,138 +149,52 @@ service /api on new http:Listener(9091) {
     }
 
     //meetings
+
     resource function post schedule_meeting(meetings:NewMeeting newMeeting) returns meetings:MeetingCreated|error? {
-        transaction {
-            sql:ExecutionResult result = check self.dbClient->execute(`
-            INSERT INTO meetings (title, description, meeting_date, meeting_time, location)
-            VALUES (${newMeeting.title}, ${newMeeting.description}, ${newMeeting.meeting_date}, ${newMeeting.meeting_time}, ${newMeeting.location})
-        `);
-
-            int|string? lastInsertId = result.lastInsertId;
-
-            if lastInsertId is int {
-                int meetingId = lastInsertId;
-
-                foreach int stakeholderId in newMeeting.stakeholders {
-                    _ = check self.dbClient->execute(`
-                    INSERT INTO meeting_stakeholders (meeting_id, stakeholder_id)
-                    VALUES (${meetingId}, ${stakeholderId})
-                `);
-                }
-
-                check commit;
-
-                return <meetings:MeetingCreated>{
-                    body: {
-                        id: meetingId,
-                        ...newMeeting
-                    }
-                };
-            } else {
-                rollback;
-                return error("Error occurred while retrieving the last insert ID");
-            }
-        }
+        meetings:MeetingCreated|error? createdMeeting = meetings:schedule(self.dbClient, newMeeting, self.emailClient);
+        return createdMeeting;
     }
 
     // Get all upcoming meetings
-    resource function get upcoming_meetings() returns meetings:MeetingRecord[]|error {
-        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
-    M.meeting_time, M.location, 
-    GROUP_CONCAT(S.stakeholder_name) AS stakeholders 
-    FROM meetings M 
-    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
-    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id 
-    WHERE M.meeting_date >= CURRENT_DATE 
-    GROUP BY M.id, M.title, M.description, M.meeting_date, M.meeting_time, M.location 
-    ORDER BY M.meeting_date ASC;`;
-
-        stream<meetings:MeetingRecord, sql:Error?> meetingStream = self.dbClient->query(query);
-        return from meetings:MeetingRecord meeting in meetingStream
-            select meeting;
+    resource function get upcoming_meetings() returns meetings:MeetingRecord[]|error? {
+        meetings:MeetingRecord[] upcomingMeetings = check meetings:getUpcomingMeetings(self.dbClient);
+        return upcomingMeetings;
     }
 
     // Get all meetings
     resource function get all_meetings() returns meetings:MeetingRecord[]|error {
-        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
-       M.meeting_time, M.location, 
-       GROUP_CONCAT(S.id, ':', S.stakeholder_name) AS stakeholders 
-        FROM meetings M 
-    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
-    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id
-    GROUP BY M.id
-    ORDER BY M.meeting_date ASC`;
-        stream<meetings:MeetingRecord, sql:Error?> meetingStream = self.dbClient->query(query);
-        return from meetings:MeetingRecord meeting in meetingStream
-            select meeting;
+        meetings:MeetingRecord[] upcomingMeetings = check meetings:getAllMeetings(self.dbClient);
+        return upcomingMeetings;
     }
 
     // Get a single meeting by ID
     resource function get meetings/[int id]() returns meetings:MeetingRecord|http:NotFound {
-        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
-    M.meeting_time, M.location, 
-    GROUP_CONCAT(S.id, ':', S.stakeholder_name) AS stakeholders 
-    FROM meetings M 
-    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
-    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id 
-    WHERE M.id = ${id} 
-    GROUP BY M.id, M.title, M.description, M.meeting_date, M.meeting_time, M.location;`;
-
-        meetings:MeetingRecord|error meeting = self.dbClient->queryRow(query);
-        return meeting is meetings:MeetingRecord ? meeting : http:NOT_FOUND;
+        meetings:MeetingRecord|http:NotFound meetingById = meetings:getMeetingById(id, self.dbClient);
+        return meetingById;
     }
 
     //mark attendance
     resource function post mark_attendance(meetings:AttendaceRecord attendanceRecord) returns error? {
-        sql:ParameterizedQuery query = `UPDATE meeting_stakeholders 
-                                     SET attended = ${attendanceRecord.attended} 
-                                     WHERE meeting_id = ${attendanceRecord.meetingId} AND stakeholder_id = ${attendanceRecord.stakeholderId}`;
-        _ = check self.dbClient->execute(query);
+        return meetings:markAttendance(self.dbClient, attendanceRecord); 
     }
 
     // get All attendance
     resource function get attendance/[int meetingId]() returns meetings:Attendace[]|error {
-        sql:ParameterizedQuery query = `SELECT stakeholder_id,attended FROM meeting_stakeholders
-                                     WHERE meeting_id = ${meetingId}`;
-        stream<meetings:Attendace, sql:Error?> attendanceStream = self.dbClient->query(query);
-        return from meetings:Attendace atendance in attendanceStream
-            select atendance;
+        return meetings:getAttendance(meetingId, self.dbClient);
     }
 
     resource function get meetingCountByMonth() returns meetings:MeetingCount[]|error {
-        sql:ParameterizedQuery query = `
-        SELECT 
-            MONTHNAME(MIN(M.meeting_date)) AS month,
-            YEAR(MIN(M.meeting_date)) AS year,
-            COUNT(M.id) AS count,
-            MIN(M.meeting_date) AS order_date
-        FROM meetings M
-        WHERE M.meeting_date <= CURRENT_DATE
-        AND YEAR(M.meeting_date) = YEAR(CURRENT_DATE)
-        GROUP BY YEAR(M.meeting_date), MONTH(M.meeting_date)
-        ORDER BY order_date
-    `;
-
-        stream<meetings:MeetingCount, sql:Error?> meetingStream = self.dbClient->query(query);
-        return from meetings:MeetingCount meeting in meetingStream
-            select meeting;
+        meetings:MeetingCount[]|error meetingCountHeldEachMonth = meetings:getMeetingCountHeldEachMonth(self.dbClient);
+        return meetingCountHeldEachMonth;
     }
 
     // Get total meetings count
     resource function get totalMeetingsCount() returns int|error {
-        sql:ParameterizedQuery query = `
-        SELECT COUNT(*) AS total_count
-        FROM meetings
-    `;
-
-        record {|int total_count;|}|sql:Error result = self.dbClient->queryRow(query);
-
-        if result is record {|int total_count;|} {
-            return result.total_count;
-        } else {
-            return error("Failed to retrieve total meetings count");
-        }
+        int|error totalMeetingCount = meetings:getTotalMeetingCount(self.dbClient);
+        return totalMeetingCount;
     }
+
+    //meetings
 
     // Get total stakeholders count
     resource function get totalStakeholdersCount() returns int|error {
@@ -374,8 +211,6 @@ service /api on new http:Listener(9091) {
             return error("Failed to retrieve total stakeholders count");
         }
     }
-
-    //meetings
 
     resource function get googleLogin(http:Caller caller, http:Request req) returns error? {
         http:Response redirectResponse = new;
@@ -459,42 +294,35 @@ service /api on new http:Listener(9091) {
         if reqPayload is json {
             string? accessToken = (check reqPayload.accessToken).toString();
             if accessToken is string {
-            json userInfo = check getUserInfo(accessToken);
+                json userInfo = check getUserInfo(accessToken);
 
-            string email = (check userInfo.email).toString();
-            string profilePicture = (check userInfo.picture).toString();
+                string email = (check userInfo.email).toString();
+                string profilePicture = (check userInfo.picture).toString();
 
-            stream<record {}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
+                stream<record {}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
 
-            check from record {} users in resultStream
-                do {
-                    io:println("Student name: ", users);
-                    Users user = {
-                        organizationName: users["organizationName"].toString(),
-                        organizationType: users["organizationType"].toString(),
-                        industry: users["industry"].toString(),
-                        address: users["address"].toString(),
-                        country: users["country"].toString(),
-                        administratorName: users["administratorName"].toString(),
-                        email: users["email"].toString(),
-                        contactNumber: users["contactNumber"].toString(),
-                        role: users["role"].toString(),
-                        username: users["username"].toString(),
-                        password: users["password"].toString()
+                check from record {} users in resultStream
+                    do {
+                        Users user = {
+                            organizationName: users["organizationName"].toString(),
+                            organizationType: users["organizationType"].toString(),
+                            industry: users["industry"].toString(),
+                            address: users["address"].toString(),
+                            country: users["country"].toString(),
+                            administratorName: users["administratorName"].toString(),
+                            email: users["email"].toString(),
+                            contactNumber: users["contactNumber"].toString(),
+                            role: users["role"].toString(),
+                            username: users["username"].toString(),
+                            password: users["password"].toString()
+                        };
+                        json response = {
+                            user: user,
+                            user_email: email,
+                            profilePicture: profilePicture
+                        };
+                        check caller->respond(response);
                     };
-                    json response = {
-                        user: user,
-                        user_email: email,
-                        profilePicture: profilePicture
-                    };
-                    check caller->respond(response);
-                };
-
-            json response = {
-                profilePicture: profilePicture,
-                user_email: email
-            };
-            check caller->respond(response);
             }
         }
     }
@@ -562,6 +390,7 @@ service /api on new http:Listener(9091) {
         if email is string {
             io:println("Received email: " + email.toBalString());
             stream<record {}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
+            io:println("Received dsta: " + resultStream.toBalString());
 
             check from record {} users in resultStream
                 do {
@@ -835,4 +664,519 @@ service /api on new http:Listener(9091) {
 
         return false; 
     }
+
+    //survey codes
+
+    // Create a new survey
+    resource function post newSurvey(http:Caller caller, http:Request req) returns error? {
+        json surveyData = check req.getJsonPayload();
+        string title = (check surveyData.title).toString();
+        string description = (check surveyData.description).toString();
+        string user_email = (check surveyData.user_email).toString();
+
+        sql:ExecutionResult _ = check self.dbClient->execute(`INSERT INTO surveys (title, description,user_email) VALUES (${title}, ${description},${user_email})`);
+
+        check caller->respond({
+            statusCode: 200,
+            message: "Survey created successfully"
+        });
+
+        return;
+    }
+
+    // update a survey
+    resource function put updateSurvey(http:Caller caller, http:Request req) returns error? {
+        json surveyData = check req.getJsonPayload();
+        string title = check surveyData.title;
+        string description = check surveyData.description;
+        string id = (check surveyData.id).toString();
+
+        sql:ExecutionResult _ = check self.dbClient->execute(`UPDATE surveys 
+        SET title = ${title}, description = ${description}
+        WHERE id=${id}`);
+
+        // check caller->respond("Survey updated successfully");
+
+        check caller->respond({
+            statusCode: 204,
+            message: "Survey updated successfully"
+        });
+
+        return;
+    }
+
+    // Get all surveys
+    resource function get allSurveys(string user_email) returns Survey[]|error {
+        Survey[] surveys = [];
+        sql:ParameterizedQuery query = `SELECT * FROM surveys WHERE status = '1' AND user_email=${user_email}`;
+        stream<Survey, sql:Error?> resultStream = self.dbClient->query(query);
+
+        check from Survey survey in resultStream
+            do {
+                surveys.push(survey);
+            };
+
+        check resultStream.close();
+        return surveys;
+    }
+
+    // Get survey by ID
+    resource function get surveyById(int id) returns Survey|error? {
+        sql:ParameterizedQuery query = `SELECT * FROM surveys WHERE id = ${id}`;
+        stream<record {|int id; string title; string description;|}, sql:Error?> resultStream = self.dbClient->query(query);
+
+        // Survey survey;
+        // json survey = {};
+        var result = resultStream.next();
+        if result is record {|Survey value;|} {
+            Survey survey = result.value;
+            check resultStream.close();
+            return survey;
+        } else {
+            check resultStream.close();
+            json errorResponse = {message: "Survey not found"};
+            http:Response response = new;
+            response.statusCode = 404;
+            response.setJsonPayload(errorResponse);
+            return error("Survey not found");
+        }
+    }
+
+    // Delete a survey
+    resource function put deleteSurvey(string id) returns error? {
+        // Execute the SQL delete statement
+        // sql:ExecutionResult result = check self.dbClient->execute(`DELETE FROM surveys WHERE id = ${id}`);
+        sql:ExecutionResult result = check self.dbClient->execute(`UPDATE surveys 
+        SET status = 0 WHERE id=${id}`);
+
+        // Check if any rows were deleted
+        if (result.affectedRowCount == 0) {
+            return error("Survey not found");
+        }
+
+        // Return a success message
+        return;
+    }
+
+    // Add a question to a survey
+    resource function post addQuestion(http:Request req) returns error? {
+        json questionData = check req.getJsonPayload();
+        int surveyId = <int>(check questionData.surveyId);
+        string questionText = (check questionData.questionText).toString();
+        string questionType = (check questionData.questionType).toString();
+        json[] choices = <json[]>(check questionData.choices);
+
+        sql:ParameterizedQuery query = `INSERT INTO questions (survey_id, question_text, question_type) VALUES (${surveyId}, ${questionText}, ${questionType})`;
+        sql:ExecutionResult result = check self.dbClient->execute(query);
+
+        // Retrieve the last inserted ID
+        int|string? lastInsertId = result.lastInsertId;
+
+        if lastInsertId is int {
+            io:println("Last Inserted ID: ", lastInsertId);
+
+            // Insert choices if applicable (for multiple_choice, checkbox, or rating types)
+            if (questionType == "multiple_choice" || questionType == "checkbox" || questionType == "rating") {
+                foreach var choice in choices {
+                    sql:ParameterizedQuery choiceQuery = `INSERT INTO choices (question_id, choice_text)
+                                                  VALUES (${lastInsertId}, ${choice.toString()})`;
+                    _ = check self.dbClient->execute(choiceQuery);
+                }
+            }
+        } else {
+            io:println("Unable to obtain last insert ID");
+
+        }
+        return;
+    }
+
+    // Update Question by ID
+    resource function put updateQuestion(http:Caller caller, http:Request req) returns error? {
+        json questionData = check req.getJsonPayload();
+        int id = <int>(check questionData.id); // Get the question ID from the request body
+        int surveyId = <int>(check questionData.surveyId);
+        string questionText = (check questionData.questionText).toString();
+        string questionType = (check questionData.questionType).toString();
+        json[] choices = <json[]>(check questionData.choices);
+
+        // Update the question in the database
+        sql:ParameterizedQuery query = `UPDATE questions 
+                                        SET survey_id = ${surveyId}, 
+                                            question_text = ${questionText}, 
+                                            question_type = ${questionType} 
+                                        WHERE id = ${id}`;
+        _ = check self.dbClient->execute(query);
+
+        // If the question type has choices, update them
+        if (questionType == "multiple_choice" || questionType == "checkbox" || questionType == "rating") {
+            // Delete existing choices
+            sql:ParameterizedQuery deleteQuery = `DELETE FROM choices WHERE question_id = ${id}`;
+            _ = check self.dbClient->execute(deleteQuery);
+
+            // Insert new choices
+            foreach var choice in choices {
+                sql:ParameterizedQuery choiceQuery = `INSERT INTO choices (question_id, choice_text)
+                                                      VALUES (${id}, ${choice.toString()})`;
+                _ = check self.dbClient->execute(choiceQuery);
+            }
+        }
+
+        // Send a response indicating successful update
+        check caller->respond({
+            statusCode: 204,
+            message: "Question updated successfully"
+        });
+
+        return;
+    }
+
+    // Get all questions
+    resource function get allQuestion(string user_email) returns TransformedQuestion[]|error {
+        AllQuestion[] allQuestions = [];
+
+        // Query to get all active questions
+        // sql:ParameterizedQuery query = `SELECT * FROM questions WHERE status = '1' AND survey_id IN (SELECT id as survey_id FROM surveys WHERE user_email IN ('${userEmail}'))`;
+        stream<Question, sql:Error?> resultStream = self.dbClient->query(allQuestionParameterizedQuery(user_email));
+
+        check from Question question in resultStream
+            do {
+
+                Choice[] choicesByQuestionId = check self.getChoicesByQuestionId(question.id);
+
+                AllQuestion allQuestion = {
+                    question: question,
+                    choices: choicesByQuestionId
+                };
+
+                // Push the question and its choices to the final list
+                allQuestions.push(allQuestion);
+            };
+
+        // Close the result stream for questions
+        check resultStream.close();
+
+        // Transform questions to the desired output format
+        TransformedQuestion[] transformedQuestions = self.transformQuestions(allQuestions);
+
+        return transformedQuestions;
+    }
+
+    resource function get allChoicesByQuestionId(int id) returns Choice[]|error {
+        Choice[] listResult = check self.getChoicesByQuestionId(id);
+        return listResult;
+    }
+
+    public function getChoicesByQuestionId(int id) returns Choice[]|error {
+        // Initialize an empty array to store choices
+        Choice[]? choices = null;
+
+        // Query to get choices for the current question
+        sql:ParameterizedQuery query1 = `SELECT * FROM choices WHERE question_id = ${id} AND status = '1'`;
+        stream<Choice, sql:Error?> resultStream1 = self.dbClient->query(query1);
+
+        check from Choice choice in resultStream1
+            do {
+                // Initialize the array if it's not done already
+                if (choices is null) {
+                    choices = [];
+                }
+
+                // Safely push choices into the array
+                // choices.push(choice);
+                (<Choice[]>choices).push(choice);
+            };
+
+        // Close the result stream for choices
+        check resultStream1.close();
+
+        // If choices are not found, ensure the array is empty
+        if (choices is null) {
+            choices = []; // This guarantees that the array is not null
+        }
+
+        return <Choice[]>choices;
+    }
+
+    public function transformQuestions(AllQuestion[] allQuestions) returns TransformedQuestion[] {
+        TransformedQuestion[] transformedQuestions = [];
+
+        foreach var item in allQuestions {
+            TransformedQuestion transformedQuestion = {
+                id: item.question.id,
+                surveyId: item.question.survey_id,
+                questionText: item.question.question_text,
+                questionType: item.question.question_type,
+                choices: from var choice in item.choices
+                    select choice.choice_text
+            };
+
+            transformedQuestions.push(transformedQuestion);
+        }
+
+        return transformedQuestions;
+    }
+
+    // Update status to 0 for both the question and its related choices
+    resource function put deleteQuestion(http:Request req) returns error? {
+        // Extract the id from the request body
+        json requestBody = check req.getJsonPayload();
+        string id = (check requestBody.id).toString();
+
+        // Update the status of all choices related to this question to 0
+        sql:ExecutionResult _ = check self.dbClient->execute(`UPDATE choices 
+        SET status = 0 WHERE question_id=${id}`);
+
+        // Update the status of the question to 0
+        sql:ExecutionResult questionResult = check self.dbClient->execute(`UPDATE questions 
+        SET status = 0 WHERE id=${id}`);
+
+        // Check if any rows were affected for the question
+        if (questionResult.affectedRowCount == 0) {
+            return error("Question not found");
+        }
+
+        // Return a success message
+        return;
+    }
+
+    // Get all responses
+    resource function get allResponses() returns TransformedResponse[]|error {
+        AllResponse[] allResponses = [];
+
+        // Query to get all responses
+        sql:ParameterizedQuery query = `SELECT * FROM responses`;
+        stream<Response, sql:Error?> resultStream = self.dbClient->query(query);
+
+        check from Response response in resultStream
+            do {
+                // Fetch the corresponding stakeholder for this response
+                sql:ParameterizedQuery stakeholderQuery = `SELECT * FROM stakeholders WHERE id = ${response.stakeholder_id}`;
+                Stakeholder? stakeholder = check self.dbClient->queryRow(stakeholderQuery);
+
+                // Fetch the corresponding survey for this response
+                sql:ParameterizedQuery surveyQuery = `SELECT * FROM surveys WHERE id = ${response.survey_id}`;
+                Survey? survey = check self.dbClient->queryRow(surveyQuery);
+
+                // Fetch the corresponding question for this response
+                sql:ParameterizedQuery questionQuery = `SELECT * FROM questions WHERE id = ${response.question_id}`;
+                Question? question = check self.dbClient->queryRow(questionQuery);
+
+                // Ensure that stakeholder, survey, and question exist
+                if (stakeholder is Stakeholder && survey is Survey && question is Question) {
+                    AllResponse allResponse = {
+                        response: response,
+                        stakeholder: stakeholder,
+                        survey: survey,
+                        question: question
+                    };
+
+                    // Push the response and its related data to the final list
+                    allResponses.push(allResponse);
+                }
+            };
+
+        // Close the result stream for responses
+        check resultStream.close();
+
+        // Transform responses to the desired output format
+        TransformedResponse[] transformedResponses = self.transformResponses(allResponses);
+
+        return transformedResponses;
+    }
+
+    // Function to transform responses into the desired format
+    public function transformResponses(AllResponse[] allResponses) returns TransformedResponse[] {
+        TransformedResponse[] transformedResponses = [];
+
+        foreach var item in allResponses {
+            TransformedResponse transformedResponse = {
+                id: item.response.id,
+                stakeholderId: item.response.stakeholder_id,
+                surveyId: item.response.survey_id,
+                questionId: item.response.question_id,
+                responseText: item.response.response_text
+            };
+
+            transformedResponses.push(transformedResponse);
+        }
+
+        return transformedResponses;
+    }
+
+// Get all submissions
+resource function get allSubmissions() returns TransformedSubmission[]|error {
+    AllSubmission[] allSubmissions = [];
+
+    // Query to get all submissions
+    sql:ParameterizedQuery query = `SELECT * FROM survey_submissions`;
+    stream<Submission, sql:Error?> resultStream = self.dbClient->query(query);
+
+    // Iterate over the stream to fetch each submission
+    record {| Submission value; |}? nextSubmission = check resultStream.next();
+    
+    while nextSubmission is record {| Submission value; |} {
+        Submission submission = nextSubmission.value;
+
+        // Fetch the corresponding stakeholder for this submission
+        sql:ParameterizedQuery stakeholderQuery = `SELECT * FROM stakeholders WHERE id = ${submission.stakeholder_id}`;
+        Stakeholder? stakeholder =check self.dbClient->queryRow(stakeholderQuery);
+
+        // Fetch the corresponding survey for this submission
+        sql:ParameterizedQuery surveyQuery = `SELECT * FROM surveys WHERE id = ${submission.survey_id}`;
+        Survey? survey = check self.dbClient->queryRow(surveyQuery);
+
+        // Ensure that stakeholder and survey exist
+        if (stakeholder is Stakeholder && survey is Survey) {
+            AllSubmission allSubmission = {
+                submission: submission,
+                stakeholder: stakeholder,
+                survey: survey
+                };
+
+                // Push the submission and its related data to the final list
+                allSubmissions.push(allSubmission);
+            }
+
+            // Fetch the next submission in the stream
+            nextSubmission = check resultStream.next();
+        }
+
+        // Close the result stream for submissions
+        check resultStream.close();
+
+        // Transform submissions to the desired output format
+        TransformedSubmission[] transformedSubmissions = self.transformSubmissions(allSubmissions);
+
+        return transformedSubmissions;
+    }
+
+    // Function to transform submissions into the desired format
+    public function transformSubmissions(AllSubmission[] allSubmissions) returns TransformedSubmission[] {
+        TransformedSubmission[] transformedSubmissions = [];
+
+        foreach var item in allSubmissions {
+            TransformedSubmission transformedSubmission = {
+                id: item.submission.id,
+                stakeholderId: item.submission.stakeholder_id,
+                surveyId: item.submission.survey_id,
+                stakeholderName: item.stakeholder.stakeholder_name,
+                surveyTitle: item.survey.title,
+                submittedAt: item.submission.submitted_at
+            };
+
+            transformedSubmissions.push(transformedSubmission);
+        }
+
+        return transformedSubmissions;
+    }
+
+    resource function get checkStakeholder(http:Caller caller, http:Request req) returns error? {
+    // Get query params from URL
+    string? stakeholderEmail = req.getQueryParamValue("stakeholderemail");
+    string? surveyId = req.getQueryParamValue("surveyid");
+
+    if stakeholderEmail is () || surveyId is () {
+        // Respond with 400 Bad Request if email or survey ID is missing
+        check caller->respond({
+            statusCode: http:STATUS_BAD_REQUEST,
+            message: "Missing stakeholder email or survey ID"
+        });
+        return;
+    }
+
+    // Fetch stakeholder_id based on email
+    sql:ParameterizedQuery parameterizedQuery = getStakeholderIdParameterizedQuery(<string>stakeholderEmail);
+    int? stakeholderId = check self.dbClient->queryRow(parameterizedQuery);
+
+    if stakeholderId is () {
+        // Respond with error if stakeholder ID not found
+        check caller->respond({
+            statusCode: http:STATUS_BAD_REQUEST,
+            message: "Stakeholder not found"
+        });
+        return;
+    }
+
+    // Validate stakeholder email and survey ID in the database
+    stream<record {| int count; string? user_email; |}, sql:Error?> resultStream = self.dbClient->query(
+        checkStakeholderParameterizedQuery(stakeholderEmail, surveyId, <int>stakeholderId)
+    );
+
+    record {| record {| int count; string? user_email; |} value; |}| sql:Error? result = resultStream.next();
+
+    if result is error {
+        io:println(result);
+        // Handle the error
+        check caller->respond({
+            statusCode: http:STATUS_INTERNAL_SERVER_ERROR,
+            message: "Database query failed"
+        });
+        return;
+    }
+
+    if result is () || result.value.count == 0 {
+        io:println(result);
+        // No matching records, respond with error
+        check caller->respond({
+            statusCode: http:STATUS_FORBIDDEN,
+            message: "Invalid stakeholder or survey, or you already submitted"
+        });
+        return;
+    }
+
+    // Valid stakeholder and survey, respond with success
+    string? userEmail = result.value.user_email;
+    check caller->respond({"message": "Valid stakeholder and survey", "email": userEmail ?: "No email found"});
+}
+
+    resource function post submitSurvey(http:Caller caller, http:Request req) returns error? {
+        json requestBody = check req.getJsonPayload();
+        string stakeholderEmail = (check requestBody.stakeholderEmail).toString();
+        int surveyId = <int>check requestBody.surveyId;
+        json responses = check requestBody.responses;
+
+        // Fetch stakeholder_id based on email
+        sql:ParameterizedQuery parameterizedQuery = getStakeholderIdParameterizedQuery(stakeholderEmail);
+        int? stakeholderId = check self.dbClient->queryRow(parameterizedQuery);
+
+        // Handle case when no stakeholder is found for the given email
+        if stakeholderId is () {
+            http:Response res = new;
+            res.statusCode = 404;
+            res.setPayload({message: "Stakeholder not found for email: " + stakeholderEmail});
+            check caller->respond(res);
+            return;
+        }
+
+
+        // Insert into survey_submissions (only once per submission)
+        sql:ParameterizedQuery surveySubmissionParameterizedQueryResult = surveySubmissionParameterizedQuery(stakeholderId, surveyId);
+        _ = check self.dbClient->execute(surveySubmissionParameterizedQueryResult);
+
+        // Process responses for each question
+        if responses is map<anydata> {
+            foreach var [questionIdStr, response] in responses.entries() {
+                int qId = check 'int:fromString(questionIdStr); // Convert questionId to an int
+
+                // If response is an array (for checkboxes), loop through each response
+                if response is json[] {
+                    foreach var choice in response {
+                        string choiceValue = choice.toString();
+                        sql:ParameterizedQuery parameterizedQueryResult = submitResponseParameterizedQuery(stakeholderId, surveyId, qId, choiceValue);
+                        _ = check self.dbClient->execute(parameterizedQueryResult);
+                    }
+                } else {
+                    string responseValue = response.toString();
+                    sql:ParameterizedQuery parameterizedQueryResult = submitResponseParameterizedQuery(stakeholderId, surveyId, qId, responseValue);
+                    _ = check self.dbClient->execute(parameterizedQueryResult);
+                }
+            }
+        }
+
+        // Send success response
+        http:Response res = new;
+        res.setPayload({message: "Survey responses submitted successfully"});
+        check caller->respond(res);
+    }
+
 }

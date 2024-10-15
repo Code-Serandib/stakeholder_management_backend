@@ -60,7 +60,6 @@ public type Attendace record {|
     boolean attendance;
 |};
 
-
 public type MeetingCount record {
     string month;
     int year;
