@@ -1307,46 +1307,6 @@ service /api on new http:Listener(9091) {
         return transformedResponses;
     }
 
-    // Get all submissions
-// resource function get allSubmissions() returns TransformedSubmission[]|error {
-//     AllSubmission[] allSubmissions = [];
-
-//     // Query to get all submissions
-//     sql:ParameterizedQuery query = `SELECT * FROM survey_submissions`;
-//     stream<Submission, sql:Error?> resultStream = self.dbClient->query(query);
-
-//     check from Submission submission in resultStream
-//         do {
-//             // Fetch the corresponding stakeholder for this submission
-//             sql:ParameterizedQuery stakeholderQuery = `SELECT * FROM stakeholders WHERE id = ${submission.stakeholder_id}`;
-//             Stakeholder? stakeholder = check self.dbClient->queryRow(stakeholderQuery);
-
-//             // Fetch the corresponding survey for this submission
-//             sql:ParameterizedQuery surveyQuery = `SELECT * FROM surveys WHERE id = ${submission.survey_id} and status = '1'`;
-//             Survey? survey = check self.dbClient->queryRow(surveyQuery);
-
-//             // Ensure that stakeholder and survey exist
-//             if (stakeholder is Stakeholder && survey is Survey) {
-//                 AllSubmission allSubmission = {
-//                     submission: submission,
-//                     stakeholder: stakeholder,
-//                     survey: survey
-//                 };
-
-//                 // Push the submission and its related data to the final list
-//                 allSubmissions.push(allSubmission);
-//             }
-//         };
-
-//     // Close the result stream for submissions
-//     check resultStream.close();
-
-//     // Transform submissions to the desired output format
-//     TransformedSubmission[] transformedSubmissions = self.transformSubmissions(allSubmissions);
-
-//     return transformedSubmissions;
-// }
-
 // Get all submissions
 resource function get allSubmissions() returns TransformedSubmission[]|error {
     AllSubmission[] allSubmissions = [];

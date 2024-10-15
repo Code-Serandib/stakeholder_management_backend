@@ -109,3 +109,10 @@ type TransformedSubmission record {
     string submittedAt;
 };
 
+// Define a record to hold email details
+type EmailDetails record {
+    string recipient;
+    string subject;
+    string body;
+};
+
