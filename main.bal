@@ -1190,34 +1190,34 @@ service /api on new http:Listener(9091) {
         return transformedResponses;
     }
 
-    // Get all submissions
-    resource function get allSubmissions() returns TransformedSubmission[]|error {
-        AllSubmission[] allSubmissions = [];
+// Get all submissions
+resource function get allSubmissions() returns TransformedSubmission[]|error {
+    AllSubmission[] allSubmissions = [];
 
-        // Query to get all submissions
-        sql:ParameterizedQuery query = `SELECT * FROM survey_submissions`;
-        stream<Submission, sql:Error?> resultStream = self.dbClient->query(query);
+    // Query to get all submissions
+    sql:ParameterizedQuery query = `SELECT * FROM survey_submissions`;
+    stream<Submission, sql:Error?> resultStream = self.dbClient->query(query);
 
-        // Iterate over the stream to fetch each submission
-        record {|Submission value;|}? nextSubmission = check resultStream.next();
+    // Iterate over the stream to fetch each submission
+    record {| Submission value; |}? nextSubmission = check resultStream.next();
+    
+    while nextSubmission is record {| Submission value; |} {
+        Submission submission = nextSubmission.value;
 
-        while nextSubmission is record {|Submission value;|} {
-            Submission submission = nextSubmission.value;
+        // Fetch the corresponding stakeholder for this submission
+        sql:ParameterizedQuery stakeholderQuery = `SELECT * FROM stakeholders WHERE id = ${submission.stakeholder_id}`;
+        Stakeholder? stakeholder =check self.dbClient->queryRow(stakeholderQuery);
 
-            // Fetch the corresponding stakeholder for this submission
-            sql:ParameterizedQuery stakeholderQuery = `SELECT * FROM stakeholders WHERE id = ${submission.stakeholder_id}`;
-            Stakeholder? stakeholder = check self.dbClient->queryRow(stakeholderQuery);
+        // Fetch the corresponding survey for this submission
+        sql:ParameterizedQuery surveyQuery = `SELECT * FROM surveys WHERE id = ${submission.survey_id}`;
+        Survey? survey = check self.dbClient->queryRow(surveyQuery);
 
-            // Fetch the corresponding survey for this submission
-            sql:ParameterizedQuery surveyQuery = `SELECT * FROM surveys WHERE id = ${submission.survey_id}`;
-            Survey? survey = check self.dbClient->queryRow(surveyQuery);
-
-            // Ensure that stakeholder and survey exist
-            if (stakeholder is Stakeholder && survey is Survey) {
-                AllSubmission allSubmission = {
-                    submission: submission,
-                    stakeholder: stakeholder,
-                    survey: survey
+        // Ensure that stakeholder and survey exist
+        if (stakeholder is Stakeholder && survey is Survey) {
+            AllSubmission allSubmission = {
+                submission: submission,
+                stakeholder: stakeholder,
+                survey: survey
                 };
 
                 // Push the submission and its related data to the final list
