@@ -5,6 +5,7 @@ import stakeholder_management_backend.stakeholder_equilibrium;
 import stakeholder_management_backend.theoretical_depth;
 
 import ballerina/data.jsondata;
+import ballerina/email;
 import ballerina/http;
 import ballerina/io;
 import ballerina/jwt;
@@ -14,9 +15,9 @@ import ballerina/uuid;
 import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
 
-type rowType record {
-
-};
+configurable string SMTP_EMAIL = ?;
+configurable string SMTP_USERNAME = ?;
+configurable string SMTP_PASSWORD = ?;
 
 @http:ServiceConfig {
     cors: {
@@ -30,11 +31,19 @@ service /api on new http:Listener(9091) {
 
     final http:Client metricsAPIClient;
     final sql:Client dbClient;
+    final email:SmtpClient emailClient;
 
     function init() returns error? {
         self.metricsAPIClient = check new ("http://localhost:9090/stakeholder-analytics");
         self.dbClient = check new jdbc:Client(jdbcUrl);
         check initDatabase(self.dbClient);
+
+        email:SmtpConfiguration smtpConfig = {
+            port: 2525,
+            security: email:START_TLS_AUTO
+        };
+
+        self.emailClient = check new (SMTP_EMAIL, SMTP_USERNAME, SMTP_PASSWORD, smtpConfig);
     }
 
     @http:ResourceConfig {
@@ -57,118 +66,32 @@ service /api on new http:Listener(9091) {
 
     //risk score
     resource function post risk_score(http:Caller caller, risk_modeling:RiskInput riskInput) returns error? {
-
-        json|error? riskScore = risk_modeling:calculateRiskScore(self.metricsAPIClient, riskInput);
-
-        if riskScore is json {
-
-            json response = {"riskScore": riskScore};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": riskScore.message()};
-            check caller->respond(response);
-
-        }
+        return risk_modeling:getRiskScore(caller, riskInput, self.metricsAPIClient);
     }
 
     //calculate_project_risk
     resource function post project_risk(http:Caller caller, http:Request req) returns error? {
-        json payload = check req.getJsonPayload();
-
-        risk_modeling:RiskInput[] riskInputs = check jsondata:parseAsType(check payload.riskInputs);
-        float[] influences = check jsondata:parseAsType(check payload.influences);
-
-        json|error? projectRisk = risk_modeling:calculateProjectRisk(self.metricsAPIClient, riskInputs, influences);
-
-        if projectRisk is json {
-
-            json response = {"projectRisk": projectRisk};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": projectRisk.message()};
-            check caller->respond(response);
-
-        }
+        return risk_modeling:getProjectRisk(caller, req, self.metricsAPIClient); 
     }
 
     //calculate_project_risk
     resource function post engagement_drop_alert(http:Caller caller, http:Request req) returns error? {
-        json payload = check req.getJsonPayload();
-
-        risk_modeling:RiskInput[] riskInputs = check jsondata:parseAsType(check payload.riskInputs);
-        float engamenetTreshold = check payload.Te;
-
-        json|error? engagementDropAlerts = risk_modeling:engagementDropAlert(self.metricsAPIClient, riskInputs, engamenetTreshold);
-
-        if engagementDropAlerts is json {
-
-            json response = {"engagementDropAlerts": engagementDropAlerts};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": engagementDropAlerts.message()};
-            check caller->respond(response);
-
-        }
+        return risk_modeling:getEngagementDropAlert(caller, req, self.metricsAPIClient); 
     }
 
     //calculate priority score
     resource function post priority_score(http:Caller caller, engagement_metrics:EPSInput epsInput) returns error? {
-
-        json|error? Eps = engagement_metrics:calculateEps(self.metricsAPIClient, epsInput);
-
-        if Eps is json {
-
-            json response = {"EpsResult": Eps};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": Eps.message()};
-            check caller->respond(response);
-
-        }
+        return engagement_metrics:getPriorityScore(caller, epsInput, self.metricsAPIClient);
     }
 
     //calculate balanced score metrics
     resource function post balanced_score(http:Caller caller, engagement_metrics:BSCInput bscInput) returns error? {
-
-        json|error? Bsc = engagement_metrics:calculateBsc(self.metricsAPIClient, bscInput);
-
-        if Bsc is json {
-
-            json response = {"BscResult": Bsc};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": Bsc.message()};
-            check caller->respond(response);
-
-        }
+        return engagement_metrics:getBalancedScore(caller, bscInput, self.metricsAPIClient);
     }
 
     //calculate total engament score
     resource function post engagement_score(http:Caller caller, engagement_metrics:TESInput tesInput) returns error? {
-
-        json|error? Tsc = engagement_metrics:calculateTes(self.metricsAPIClient, tesInput);
-
-        if Tsc is json {
-
-            json response = {"TscResult": Tsc};
-            check caller->respond(response);
-
-        } else {
-
-            json response = {"error": Tsc.message()};
-            check caller->respond(response);
-
-        }
+        return engagement_metrics:getEngagementScore(caller, tesInput, self.metricsAPIClient);
     }
 
     //influence_index
@@ -226,138 +149,52 @@ service /api on new http:Listener(9091) {
     }
 
     //meetings
+
     resource function post schedule_meeting(meetings:NewMeeting newMeeting) returns meetings:MeetingCreated|error? {
-        transaction {
-            sql:ExecutionResult result = check self.dbClient->execute(`
-            INSERT INTO meetings (title, description, meeting_date, meeting_time, location)
-            VALUES (${newMeeting.title}, ${newMeeting.description}, ${newMeeting.meeting_date}, ${newMeeting.meeting_time}, ${newMeeting.location})
-        `);
-
-            int|string? lastInsertId = result.lastInsertId;
-
-            if lastInsertId is int {
-                int meetingId = lastInsertId;
-
-                foreach int stakeholderId in newMeeting.stakeholders {
-                    _ = check self.dbClient->execute(`
-                    INSERT INTO meeting_stakeholders (meeting_id, stakeholder_id)
-                    VALUES (${meetingId}, ${stakeholderId})
-                `);
-                }
-
-                check commit;
-
-                return <meetings:MeetingCreated>{
-                    body: {
-                        id: meetingId,
-                        ...newMeeting
-                    }
-                };
-            } else {
-                rollback;
-                return error("Error occurred while retrieving the last insert ID");
-            }
-        }
+        meetings:MeetingCreated|error? createdMeeting = meetings:schedule(self.dbClient, newMeeting, self.emailClient);
+        return createdMeeting;
     }
 
     // Get all upcoming meetings
-    resource function get upcoming_meetings() returns meetings:MeetingRecord[]|error {
-        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
-    M.meeting_time, M.location, 
-    GROUP_CONCAT(S.stakeholder_name) AS stakeholders 
-    FROM meetings M 
-    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
-    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id 
-    WHERE M.meeting_date >= CURRENT_DATE 
-    GROUP BY M.id, M.title, M.description, M.meeting_date, M.meeting_time, M.location 
-    ORDER BY M.meeting_date ASC;`;
-
-        stream<meetings:MeetingRecord, sql:Error?> meetingStream = self.dbClient->query(query);
-        return from meetings:MeetingRecord meeting in meetingStream
-            select meeting;
+    resource function get upcoming_meetings() returns meetings:MeetingRecord[]|error? {
+        meetings:MeetingRecord[] upcomingMeetings = check meetings:getUpcomingMeetings(self.dbClient);
+        return upcomingMeetings;
     }
 
     // Get all meetings
     resource function get all_meetings() returns meetings:MeetingRecord[]|error {
-        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
-       M.meeting_time, M.location, 
-       GROUP_CONCAT(S.id, ':', S.stakeholder_name) AS stakeholders 
-        FROM meetings M 
-    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
-    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id
-    GROUP BY M.id
-    ORDER BY M.meeting_date ASC`;
-        stream<meetings:MeetingRecord, sql:Error?> meetingStream = self.dbClient->query(query);
-        return from meetings:MeetingRecord meeting in meetingStream
-            select meeting;
+        meetings:MeetingRecord[] upcomingMeetings = check meetings:getAllMeetings(self.dbClient);
+        return upcomingMeetings;
     }
 
     // Get a single meeting by ID
     resource function get meetings/[int id]() returns meetings:MeetingRecord|http:NotFound {
-        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
-    M.meeting_time, M.location, 
-    GROUP_CONCAT(S.id, ':', S.stakeholder_name) AS stakeholders 
-    FROM meetings M 
-    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
-    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id 
-    WHERE M.id = ${id} 
-    GROUP BY M.id, M.title, M.description, M.meeting_date, M.meeting_time, M.location;`;
-
-        meetings:MeetingRecord|error meeting = self.dbClient->queryRow(query);
-        return meeting is meetings:MeetingRecord ? meeting : http:NOT_FOUND;
+        meetings:MeetingRecord|http:NotFound meetingById = meetings:getMeetingById(id, self.dbClient);
+        return meetingById;
     }
 
     //mark attendance
     resource function post mark_attendance(meetings:AttendaceRecord attendanceRecord) returns error? {
-        sql:ParameterizedQuery query = `UPDATE meeting_stakeholders 
-                                     SET attended = ${attendanceRecord.attended} 
-                                     WHERE meeting_id = ${attendanceRecord.meetingId} AND stakeholder_id = ${attendanceRecord.stakeholderId}`;
-        _ = check self.dbClient->execute(query);
+        return meetings:markAttendance(self.dbClient, attendanceRecord); 
     }
 
     // get All attendance
     resource function get attendance/[int meetingId]() returns meetings:Attendace[]|error {
-        sql:ParameterizedQuery query = `SELECT stakeholder_id,attended FROM meeting_stakeholders
-                                     WHERE meeting_id = ${meetingId}`;
-        stream<meetings:Attendace, sql:Error?> attendanceStream = self.dbClient->query(query);
-        return from meetings:Attendace atendance in attendanceStream
-            select atendance;
+        return meetings:getAttendance(meetingId, self.dbClient);
     }
 
     resource function get meetingCountByMonth() returns meetings:MeetingCount[]|error {
-        sql:ParameterizedQuery query = `
-        SELECT 
-            MONTHNAME(MIN(M.meeting_date)) AS month,
-            YEAR(MIN(M.meeting_date)) AS year,
-            COUNT(M.id) AS count,
-            MIN(M.meeting_date) AS order_date
-        FROM meetings M
-        WHERE M.meeting_date <= CURRENT_DATE
-        AND YEAR(M.meeting_date) = YEAR(CURRENT_DATE)
-        GROUP BY YEAR(M.meeting_date), MONTH(M.meeting_date)
-        ORDER BY order_date
-    `;
-
-        stream<meetings:MeetingCount, sql:Error?> meetingStream = self.dbClient->query(query);
-        return from meetings:MeetingCount meeting in meetingStream
-            select meeting;
+        meetings:MeetingCount[]|error meetingCountHeldEachMonth = meetings:getMeetingCountHeldEachMonth(self.dbClient);
+        return meetingCountHeldEachMonth;
     }
 
     // Get total meetings count
     resource function get totalMeetingsCount() returns int|error {
-        sql:ParameterizedQuery query = `
-        SELECT COUNT(*) AS total_count
-        FROM meetings
-    `;
-
-        record {|int total_count;|}|sql:Error result = self.dbClient->queryRow(query);
-
-        if result is record {|int total_count;|} {
-            return result.total_count;
-        } else {
-            return error("Failed to retrieve total meetings count");
-        }
+        int|error totalMeetingCount = meetings:getTotalMeetingCount(self.dbClient);
+        return totalMeetingCount;
     }
+
+    //meetings
 
     // Get total stakeholders count
     resource function get totalStakeholdersCount() returns int|error {
@@ -374,8 +211,6 @@ service /api on new http:Listener(9091) {
             return error("Failed to retrieve total stakeholders count");
         }
     }
-
-    //meetings
 
     resource function get googleLogin(http:Caller caller, http:Request req) returns error? {
         http:Response redirectResponse = new;
