@@ -1,4 +1,5 @@
 import stakeholder_management_backend.engagement_metrics;
+import stakeholder_management_backend.meetings;
 import stakeholder_management_backend.risk_modeling;
 import stakeholder_management_backend.stakeholder_equilibrium;
 import stakeholder_management_backend.theoretical_depth;
@@ -12,6 +13,10 @@ import ballerina/sql;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
 import ballerinax/mysql.driver as _;
+
+type rowType record {
+
+};
 
 @http:ServiceConfig {
     cors: {
@@ -30,6 +35,24 @@ service /api on new http:Listener(9091) {
         self.metricsAPIClient = check new ("http://localhost:9090/stakeholder-analytics");
         self.dbClient = check new jdbc:Client(jdbcUrl);
         check initDatabase(self.dbClient);
+    }
+
+    @http:ResourceConfig {
+        auth: [
+            {
+                jwtValidatorConfig: {
+                    issuer: "codeserandib",
+                    audience: "users",
+                    signatureConfig: {
+                        certFile: "resources/codeserandib.crt"
+                    }
+                }
+            }
+        ]
+    }
+    resource function get data(http:RequestContext ctx) returns error? {
+        [jwt:Header, jwt:Payload] jwtInfo = check ctx.getWithType(http:JWT_INFORMATION);
+        io:println(jwtInfo);
     }
 
     //risk score
@@ -202,6 +225,158 @@ service /api on new http:Listener(9091) {
         }
     }
 
+    //meetings
+    resource function post schedule_meeting(meetings:NewMeeting newMeeting) returns meetings:MeetingCreated|error? {
+        transaction {
+            sql:ExecutionResult result = check self.dbClient->execute(`
+            INSERT INTO meetings (title, description, meeting_date, meeting_time, location)
+            VALUES (${newMeeting.title}, ${newMeeting.description}, ${newMeeting.meeting_date}, ${newMeeting.meeting_time}, ${newMeeting.location})
+        `);
+
+            int|string? lastInsertId = result.lastInsertId;
+
+            if lastInsertId is int {
+                int meetingId = lastInsertId;
+
+                foreach int stakeholderId in newMeeting.stakeholders {
+                    _ = check self.dbClient->execute(`
+                    INSERT INTO meeting_stakeholders (meeting_id, stakeholder_id)
+                    VALUES (${meetingId}, ${stakeholderId})
+                `);
+                }
+
+                check commit;
+
+                return <meetings:MeetingCreated>{
+                    body: {
+                        id: meetingId,
+                        ...newMeeting
+                    }
+                };
+            } else {
+                rollback;
+                return error("Error occurred while retrieving the last insert ID");
+            }
+        }
+    }
+
+    // Get all upcoming meetings
+    resource function get upcoming_meetings() returns meetings:MeetingRecord[]|error {
+        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
+    M.meeting_time, M.location, 
+    GROUP_CONCAT(S.stakeholder_name) AS stakeholders 
+    FROM meetings M 
+    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
+    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id 
+    WHERE M.meeting_date >= CURRENT_DATE 
+    GROUP BY M.id, M.title, M.description, M.meeting_date, M.meeting_time, M.location 
+    ORDER BY M.meeting_date ASC;`;
+
+        stream<meetings:MeetingRecord, sql:Error?> meetingStream = self.dbClient->query(query);
+        return from meetings:MeetingRecord meeting in meetingStream
+            select meeting;
+    }
+
+    // Get all meetings
+    resource function get all_meetings() returns meetings:MeetingRecord[]|error {
+        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
+       M.meeting_time, M.location, 
+       GROUP_CONCAT(S.id, ':', S.stakeholder_name) AS stakeholders 
+        FROM meetings M 
+    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
+    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id
+    GROUP BY M.id
+    ORDER BY M.meeting_date ASC`;
+        stream<meetings:MeetingRecord, sql:Error?> meetingStream = self.dbClient->query(query);
+        return from meetings:MeetingRecord meeting in meetingStream
+            select meeting;
+    }
+
+    // Get a single meeting by ID
+    resource function get meetings/[int id]() returns meetings:MeetingRecord|http:NotFound {
+        sql:ParameterizedQuery query = `SELECT M.id, M.title, M.description, M.meeting_date, 
+    M.meeting_time, M.location, 
+    GROUP_CONCAT(S.id, ':', S.stakeholder_name) AS stakeholders 
+    FROM meetings M 
+    LEFT JOIN meeting_stakeholders MS ON M.id = MS.meeting_id 
+    LEFT JOIN stakeholders S ON MS.stakeholder_id = S.id 
+    WHERE M.id = ${id} 
+    GROUP BY M.id, M.title, M.description, M.meeting_date, M.meeting_time, M.location;`;
+
+        meetings:MeetingRecord|error meeting = self.dbClient->queryRow(query);
+        return meeting is meetings:MeetingRecord ? meeting : http:NOT_FOUND;
+    }
+
+    //mark attendance
+    resource function post mark_attendance(meetings:AttendaceRecord attendanceRecord) returns error? {
+        sql:ParameterizedQuery query = `UPDATE meeting_stakeholders 
+                                     SET attended = ${attendanceRecord.attended} 
+                                     WHERE meeting_id = ${attendanceRecord.meetingId} AND stakeholder_id = ${attendanceRecord.stakeholderId}`;
+        _ = check self.dbClient->execute(query);
+    }
+
+    // get All attendance
+    resource function get attendance/[int meetingId]() returns meetings:Attendace[]|error {
+        sql:ParameterizedQuery query = `SELECT stakeholder_id,attended FROM meeting_stakeholders
+                                     WHERE meeting_id = ${meetingId}`;
+        stream<meetings:Attendace, sql:Error?> attendanceStream = self.dbClient->query(query);
+        return from meetings:Attendace atendance in attendanceStream
+            select atendance;
+    }
+
+    resource function get meetingCountByMonth() returns meetings:MeetingCount[]|error {
+        sql:ParameterizedQuery query = `
+        SELECT 
+            MONTHNAME(MIN(M.meeting_date)) AS month,
+            YEAR(MIN(M.meeting_date)) AS year,
+            COUNT(M.id) AS count,
+            MIN(M.meeting_date) AS order_date
+        FROM meetings M
+        WHERE M.meeting_date <= CURRENT_DATE
+        AND YEAR(M.meeting_date) = YEAR(CURRENT_DATE)
+        GROUP BY YEAR(M.meeting_date), MONTH(M.meeting_date)
+        ORDER BY order_date
+    `;
+
+        stream<meetings:MeetingCount, sql:Error?> meetingStream = self.dbClient->query(query);
+        return from meetings:MeetingCount meeting in meetingStream
+            select meeting;
+    }
+
+    // Get total meetings count
+    resource function get totalMeetingsCount() returns int|error {
+        sql:ParameterizedQuery query = `
+        SELECT COUNT(*) AS total_count
+        FROM meetings
+    `;
+
+        record {|int total_count;|}|sql:Error result = self.dbClient->queryRow(query);
+
+        if result is record {|int total_count;|} {
+            return result.total_count;
+        } else {
+            return error("Failed to retrieve total meetings count");
+        }
+    }
+
+    // Get total stakeholders count
+    resource function get totalStakeholdersCount() returns int|error {
+        sql:ParameterizedQuery query = `
+        SELECT COUNT(DISTINCT stakeholder_id) AS total_count
+        FROM meeting_stakeholders
+    `;
+
+        record {|int total_count;|}|sql:Error result = self.dbClient->queryRow(query);
+
+        if result is record {|int total_count;|} {
+            return result.total_count;
+        } else {
+            return error("Failed to retrieve total stakeholders count");
+        }
+    }
+
+    //meetings
+
     resource function get googleLogin(http:Caller caller, http:Request req) returns error? {
         http:Response redirectResponse = new;
         redirectResponse.setHeader("Location", authorizationUrl);
@@ -280,8 +455,6 @@ service /api on new http:Listener(9091) {
     }
 
     resource function post getUserDataFromAccessToken(http:Caller caller, http:Request req) returns error? {
-        // var accessToken = req.getHeader("accessToken");
-        // if accessToken is string {
         json|error reqPayload = req.getJsonPayload();
         if reqPayload is json {
             string? accessToken = (check reqPayload.accessToken).toString();
@@ -315,16 +488,12 @@ service /api on new http:Listener(9091) {
                         profilePicture: profilePicture
                     };
                     check caller->respond(response);
-                    // return user;
                 };
 
             json response = {
                 profilePicture: profilePicture,
                 user_email: email
             };
-            // json response = {
-            //     message: "test message"
-            // };
             check caller->respond(response);
             }
         }
@@ -572,20 +741,13 @@ service /api on new http:Listener(9091) {
         }
     }
 
-    // resource function post registerStakeholder(http:Caller caller, Stakeholder stakeholder) returns error? {
-    //     sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
-    //     check caller->respond("Successfully Added");
-    // }
-
     resource function post registerStakeholder(http:Caller caller, http:Request req) returns error? {
         json payload = check req.getJsonPayload();
         Stakeholder stakeholder = check payload.cloneWithType(Stakeholder);
 
-        // Check if the email already exists
         boolean emailExists = check self.checkIfEmailExists(stakeholder.email_address);
 
         if (emailExists) {
-            // Respond with a conflict message
             check caller->respond({
                 statusCode: 409,
                 message: "Email already exists. Please use a different email address."
@@ -619,7 +781,6 @@ service /api on new http:Listener(9091) {
     // Function to get all stakeholders
     function getAllStakeholders(string user_email) returns Stakeholder[]|error {
         Stakeholder[] stakeholders = [];
-        // sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE user_email = ${user_email}`;
         stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(getAllStakeholderParameterizedQuery(user_email));
 
         check from Stakeholder stakeholder in resultStream
@@ -669,11 +830,9 @@ service /api on new http:Listener(9091) {
         var result = check resultStream.next();
 
         if result is record {} {
-            // Email exists
             return true;
         }
 
-        return false; // Email doesn't exist
+        return false; 
     }
-
 }
