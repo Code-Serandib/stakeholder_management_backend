@@ -56,7 +56,7 @@ function initDatabase(sql:Client dbClient) returns error? {
                                     location VARCHAR(100))`);
 
     // Create a junction table to link meetings and stakeholders (Many-to-Many relationship)
-   _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS meeting_stakeholders (
+    _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS meeting_stakeholders (
                                     meeting_id INT NOT NULL,
                                     stakeholder_id INT NOT NULL,
                                     attended BOOLEAN NULL DEFAULT 0,
