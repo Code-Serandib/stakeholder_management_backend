@@ -14,10 +14,7 @@ string authorizationUrl = string `${AUTH_URL}?client_id=${CLIENT_ID}&redirect_ur
 // Function to get user info from Google using access token
 function getUserInfo(string accessToken) returns json|error {
     http:Client googleClient = check new ("https://www.googleapis.com");
-    // http:Request req = new;
-    // req.setHeader("Authorization", "Bearer " + accessToken);
 
-    // Define headers to include the Authorization token
     map<string> headers = {"Authorization": "Bearer " + accessToken};
 
     http:Response|error response = googleClient->get("/oauth2/v2/userinfo", headers);
@@ -43,7 +40,6 @@ function getEmailFromAccessToken(string accessToken) returns string|error {
 
     http:Response|error response = googleClient->get("/oauth2/v2/userinfo", headers);
     if response is http:Response {
-        // Parse the response payload
         json|error userInfo = response.getJsonPayload();
         if userInfo is json {
             if userInfo.email is string {
