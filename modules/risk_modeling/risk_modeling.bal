@@ -1,22 +1,60 @@
+import ballerina/data.jsondata;
 import ballerina/http;
 
-public function calculateRiskScore(http:Client metricsAPIClient, RiskInput riskInput) returns json|error{
-    json riskRecord = check metricsAPIClient->/calculate_risk_score.post(riskInput);
-    return riskRecord;
+public function getRiskScore(http:Caller caller, RiskInput riskInput, http:Client metricsAPIClient) returns error? {
+    json|error? riskScore = calculateRiskScore(metricsAPIClient, riskInput);
+
+    if riskScore is json {
+
+        json response = {"riskScore": riskScore};
+        check caller->respond(response);
+
+    } else {
+
+        json response = {"error": riskScore.message()};
+        check caller->respond(response);
+
+    }
 }
 
-public function calculateProjectRisk(http:Client metricsAPIClient, RiskInput[] riskInputs, float[] influences) returns json|error{
-    json projectRisk = check metricsAPIClient->/calculate_project_risk.post({
-        "riskInputs" : riskInputs,
-        "influences" : influences
-    });
-    return projectRisk;
+public function getProjectRisk(http:Caller caller, http:Request req, http:Client metricsAPIClient) returns error? {
+    json payload = check req.getJsonPayload();
+
+    RiskInput[] riskInputs = check jsondata:parseAsType(check payload.riskInputs);
+    float[] influences = check jsondata:parseAsType(check payload.influences);
+
+    json|error? projectRisk = calculateProjectRisk(metricsAPIClient, riskInputs, influences);
+
+    if projectRisk is json {
+
+        json response = {"projectRisk": projectRisk};
+        check caller->respond(response);
+
+    } else {
+
+        json response = {"error": projectRisk.message()};
+        check caller->respond(response);
+
+    }
 }
- 
-public function engagementDropAlert(http:Client metricsAPIClient, RiskInput[] riskInputs, float engamenetTreshold) returns json|error{
-    json dropAlerts = check metricsAPIClient->/engagement_drop_alert.post({
-        "riskInputs" : riskInputs,
-        "Te" : engamenetTreshold
-    });
-    return dropAlerts;
+
+public function getEngagementDropAlert(http:Caller caller, http:Request req, http:Client metricsAPIClient) returns error? {
+    json payload = check req.getJsonPayload();
+
+    RiskInput[] riskInputs = check jsondata:parseAsType(check payload.riskInputs);
+    float engamenetTreshold = check payload.Te;
+
+    json|error? engagementDropAlerts = engagementDropAlert(metricsAPIClient, riskInputs, engamenetTreshold);
+
+    if engagementDropAlerts is json {
+
+        json response = {"engagementDropAlerts": engagementDropAlerts};
+        check caller->respond(response);
+
+    } else {
+
+        json response = {"error": engagementDropAlerts.message()};
+        check caller->respond(response);
+
+    }
 }
