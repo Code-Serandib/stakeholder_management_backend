@@ -113,6 +113,6 @@ type TransformedSubmission record {
 type EmailDetails record {
     string recipient;
     string subject;
-    string body;
+    string bodyHtml;
 };
 
