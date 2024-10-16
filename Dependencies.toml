@@ -35,6 +35,8 @@ modules = [
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_in"},
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.sign_up"},
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.stakeholder_equilibrium"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.stakeholder_management"},
+	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.survey"},
 	{org = "CODE_SERANDIB", packageName = "stakeholder_management_backend", moduleName = "stakeholder_management_backend.theoretical_depth"}
 ]
 
