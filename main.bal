@@ -358,6 +358,11 @@ service /api on new http:Listener(9091) {
     resource function post submitSurvey(http:Caller caller, http:Request req) returns error? {
         return survey:postSubmitSurvey(caller, req, self.dbClient);
     }
+
+//share survey using email
+    resource function post share(http:Caller caller, http:Request req) returns error? {
+        return survey:postShare(caller, req, self.dbClient);
+    }
     // ************************************ Survey Mnagement *************************************
     // ******************************************* END *******************************************
 
