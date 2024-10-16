@@ -82,3 +82,8 @@ public type EmailDetails record {
     string subject;
     string bodyHtml;
 };
+
+public type SubmissionCount record {
+    string count;
+    string submitted_at;
+};
