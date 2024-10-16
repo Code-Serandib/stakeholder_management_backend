@@ -461,46 +461,46 @@ service /api on new http:Listener(9091) {
         if reqPayload is json {
             string? accessToken = (check reqPayload.accessToken).toString();
             if accessToken is string {
-            json userInfo = check getUserInfo(accessToken);
+                json userInfo = check getUserInfo(accessToken);
 
-            string email = (check userInfo.email).toString();
-            string profilePicture = (check userInfo.picture).toString();
+                string email = (check userInfo.email).toString();
+                string profilePicture = (check userInfo.picture).toString();
 
-            stream<record {}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
+                stream<record {}, sql:Error?> resultStream = self.dbClient->query(getUserData(email));
 
-            check from record {} users in resultStream
-                do {
-                    io:println("Student name: ", users);
-                    Users user = {
-                        organizationName: users["organizationName"].toString(),
-                        organizationType: users["organizationType"].toString(),
-                        industry: users["industry"].toString(),
-                        address: users["address"].toString(),
-                        country: users["country"].toString(),
-                        administratorName: users["administratorName"].toString(),
-                        email: users["email"].toString(),
-                        contactNumber: users["contactNumber"].toString(),
-                        role: users["role"].toString(),
-                        username: users["username"].toString(),
-                        password: users["password"].toString()
+                check from record {} users in resultStream
+                    do {
+                        io:println("Student name: ", users);
+                        Users user = {
+                            organizationName: users["organizationName"].toString(),
+                            organizationType: users["organizationType"].toString(),
+                            industry: users["industry"].toString(),
+                            address: users["address"].toString(),
+                            country: users["country"].toString(),
+                            administratorName: users["administratorName"].toString(),
+                            email: users["email"].toString(),
+                            contactNumber: users["contactNumber"].toString(),
+                            role: users["role"].toString(),
+                            username: users["username"].toString(),
+                            password: users["password"].toString()
+                        };
+                        json response = {
+                            user: user,
+                            user_email: email,
+                            profilePicture: profilePicture
+                        };
+                        check caller->respond(response);
+                        // return user;
                     };
-                    json response = {
-                        user: user,
-                        user_email: email,
-                        profilePicture: profilePicture
-                    };
-                    check caller->respond(response);
-                    // return user;
+
+                json response = {
+                    profilePicture: profilePicture,
+                    user_email: email
                 };
-
-            json response = {
-                profilePicture: profilePicture,
-                user_email: email
-            };
-            // json response = {
-            //     message: "test message"
-            // };
-            check caller->respond(response);
+                // json response = {
+                //     message: "test message"
+                // };
+                check caller->respond(response);
             }
         }
     }
@@ -748,11 +748,6 @@ service /api on new http:Listener(9091) {
         }
     }
 
-    // resource function post registerStakeholder(http:Caller caller, Stakeholder stakeholder) returns error? {
-    //     sql:ExecutionResult _ = check self.dbClient->execute(stakeholderRegisterParameterizedQuery(stakeholder));
-    //     check caller->respond("Successfully Added");
-    // }
-
     resource function post registerStakeholder(http:Caller caller, http:Request req) returns error? {
         json payload = check req.getJsonPayload();
         Stakeholder stakeholder = check payload.cloneWithType(Stakeholder);
@@ -929,63 +924,6 @@ service /api on new http:Listener(9091) {
         }
     }
 
-    // // Get survey by ID
-    // resource function get surveyById(http:Caller caller, http:Request req, int id) returns error? {
-    //     sql:ParameterizedQuery query = `SELECT * FROM surveys WHERE id = ${id}`;
-    //     stream<record {|int id; string title; string description;|}, sql:Error?> resultStream = surveyDB->query(query);
-
-    //     json survey = {};
-    //     var result = resultStream.next();
-    //     if result is record {|record {|int id; string title; string description;|} value;|} {
-    //         survey = result.value;
-    //     } else {
-    //         check resultStream.close();
-    //         json errorResponse = {message: "Survey not found"};
-    //         http:Response response = new;
-    //         response.statusCode = 404;
-    //         response.setJsonPayload(errorResponse);
-    //         return check caller->respond(response);
-    //     }
-
-    //     check resultStream.close();
-    //     check caller->respond(survey);
-    // }
-
-    //delete survey
-    // Delete a survey
-    // resource function delete deleteSurvey(http:Caller caller, http:Request req) returns error? {
-    //     // Extract the survey ID from the request path
-    //     string? surveyId = req.getQueryParamValue("id");
-    //     if (surveyId is null) {
-    //         return caller->respond({
-    //             statusCode: 400,
-    //             message: "Survey ID is required"
-    //         });
-    //     }
-
-    //     // Convert surveyId to string
-    //     string id = surveyId.toString();
-
-    //     // Execute the SQL delete statement
-    //     sql:ExecutionResult result = check self.dbClient->execute(`DELETE FROM surveys WHERE id = ${id}`);
-
-    //     // Check if any rows were deleted
-    //     if (result.affectedRowCount == 0) {
-    //         return caller->respond({
-    //             statusCode: 404,
-    //             message: "Survey not found"
-    //         });
-    //     }
-
-    //     // Respond with a success message
-    //     check caller->respond({
-    //         statusCode: 204,
-    //         message: "Survey deleted successfully"
-    //     });
-
-    //     return;
-    // }
-
     // Delete a survey
     resource function put deleteSurvey(string id) returns error? {
         // Execute the SQL delete statement
@@ -1034,47 +972,6 @@ service /api on new http:Listener(9091) {
         return;
     }
 
-    // Add a preflight OPTIONS response
-    // resource function options updateQuestion(http:Request req, int id) returns http:Response {
-    //     http:Response response = new;
-    //     response.setHeader("Access-Control-Allow-Origin", "*");
-    //     response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    //     response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    //     return response;
-    // }
-
-    // // Update
-    // resource function put updateQuestion(http:Request req, int id) returns error? {
-    //     json questionData = check req.getJsonPayload();
-    //     int surveyId = <int>(check questionData.surveyId);
-    //     string questionText = (check questionData.questionText).toString();
-    //     string questionType = (check questionData.questionType).toString();
-    //     json[] choices = <json[]>(check questionData.choices);
-
-    //     // Update the question
-    //     sql:ParameterizedQuery query = `UPDATE questions SET survey_id = ${surveyId}, 
-    //                                      question_text = ${questionText}, 
-    //                                      question_type = ${questionType} 
-    //                                      WHERE id = ${id}`;
-    //     _ = check self.dbClient->execute(query);
-
-    //     // Update choices if applicable
-    //     if (questionType == "multiple_choice" || questionType == "checkbox" || questionType == "rating") {
-    //         // First, delete existing choices for this question
-    //         sql:ParameterizedQuery deleteQuery = `DELETE FROM choices WHERE question_id = ${id}`;
-    //         _ = check self.dbClient->execute(deleteQuery);
-
-    //         // Insert new choices
-    //         foreach var choice in choices {
-    //             sql:ParameterizedQuery choiceQuery = `INSERT INTO choices (question_id, choice_text)
-    //                                               VALUES (${id}, ${choice.toString()})`;
-    //             _ = check self.dbClient->execute(choiceQuery);
-    //         }
-    //     }
-
-    //     return;
-    // }
-
     // Update Question by ID
     resource function put updateQuestion(http:Caller caller, http:Request req) returns error? {
         json questionData = check req.getJsonPayload();
@@ -1122,7 +1019,6 @@ service /api on new http:Listener(9091) {
         // Query to get all active questions
         // sql:ParameterizedQuery query = `SELECT * FROM questions WHERE status = '1' AND survey_id IN (SELECT id as survey_id FROM surveys WHERE user_email IN ('${userEmail}'))`;
         stream<Question, sql:Error?> resultStream = self.dbClient->query(allQuestionParameterizedQuery(user_email));
-        
 
         check from Question question in resultStream
             do {
@@ -1146,13 +1042,13 @@ service /api on new http:Listener(9091) {
 
         return transformedQuestions;
     }
-    
+
     resource function get allChoicesByQuestionId(int id) returns Choice[]|error {
         Choice[] listResult = check self.getChoicesByQuestionId(id);
         return listResult;
     }
 
-    public function getChoicesByQuestionId(int id) returns Choice[] | error {
+    public function getChoicesByQuestionId(int id) returns Choice[]|error {
         // Initialize an empty array to store choices
         Choice[]? choices = null;
 
@@ -1307,71 +1203,161 @@ service /api on new http:Listener(9091) {
         return transformedResponses;
     }
 
-// Get all submissions
-resource function get allSubmissions() returns TransformedSubmission[]|error {
-    AllSubmission[] allSubmissions = [];
+    // Get all submissions
+    resource function get allSubmissions() returns TransformedSubmission[]|error {
+        AllSubmission[] allSubmissions = [];
 
-    // Query to get all submissions
-    sql:ParameterizedQuery query = `SELECT * FROM survey_submissions`;
-    stream<Submission, sql:Error?> resultStream = self.dbClient->query(query);
+        // Query to get all submissions
+        sql:ParameterizedQuery query = `SELECT * FROM survey_submissions`;
+        stream<Submission, sql:Error?> resultStream = self.dbClient->query(query);
 
-    // Iterate over the stream to fetch each submission
-    record {| Submission value; |}? nextSubmission = check resultStream.next();
-    
-    while nextSubmission is record {| Submission value; |} {
-        Submission submission = nextSubmission.value;
+        // Iterate over the stream to fetch each submission
+        record {|Submission value;|}? nextSubmission = check resultStream.next();
 
-        // Fetch the corresponding stakeholder for this submission
-        sql:ParameterizedQuery stakeholderQuery = `SELECT * FROM stakeholders WHERE id = ${submission.stakeholder_id}`;
-        Stakeholder? stakeholder =check self.dbClient->queryRow(stakeholderQuery);
+        while nextSubmission is record {|Submission value;|} {
+            Submission submission = nextSubmission.value;
 
-        // Fetch the corresponding survey for this submission
-        sql:ParameterizedQuery surveyQuery = `SELECT * FROM surveys WHERE id = ${submission.survey_id}`;
-        Survey? survey = check self.dbClient->queryRow(surveyQuery);
+            // Fetch the corresponding stakeholder for this submission
+            sql:ParameterizedQuery stakeholderQuery = `SELECT * FROM stakeholders WHERE id = ${submission.stakeholder_id}`;
+            Stakeholder? stakeholder = check self.dbClient->queryRow(stakeholderQuery);
 
-        // Ensure that stakeholder and survey exist
-        if (stakeholder is Stakeholder && survey is Survey) {
-            AllSubmission allSubmission = {
-                submission: submission,
-                stakeholder: stakeholder,
-                survey: survey
-            };
+            // Fetch the corresponding survey for this submission
+            sql:ParameterizedQuery surveyQuery = `SELECT * FROM surveys WHERE id = ${submission.survey_id}`;
+            Survey? survey = check self.dbClient->queryRow(surveyQuery);
 
-            // Push the submission and its related data to the final list
-            allSubmissions.push(allSubmission);
+            // Ensure that stakeholder and survey exist
+            if (stakeholder is Stakeholder && survey is Survey) {
+                AllSubmission allSubmission = {
+                    submission: submission,
+                    stakeholder: stakeholder,
+                    survey: survey
+                };
+
+                // Push the submission and its related data to the final list
+                allSubmissions.push(allSubmission);
+            }
+
+            // Fetch the next submission in the stream
+            nextSubmission = check resultStream.next();
         }
 
-        // Fetch the next submission in the stream
-        nextSubmission = check resultStream.next();
+        // Close the result stream for submissions
+        check resultStream.close();
+
+        // Transform submissions to the desired output format
+        TransformedSubmission[] transformedSubmissions = self.transformSubmissions(allSubmissions);
+
+        return transformedSubmissions;
     }
 
-    // Close the result stream for submissions
-    check resultStream.close();
+    // Function to transform submissions into the desired format
+    public function transformSubmissions(AllSubmission[] allSubmissions) returns TransformedSubmission[] {
+        TransformedSubmission[] transformedSubmissions = [];
 
-    // Transform submissions to the desired output format
-    TransformedSubmission[] transformedSubmissions = self.transformSubmissions(allSubmissions);
+        foreach var item in allSubmissions {
+            TransformedSubmission transformedSubmission = {
+                id: item.submission.id,
+                stakeholderId: item.submission.stakeholder_id,
+                surveyId: item.submission.survey_id,
+                stakeholderName: item.stakeholder.stakeholder_name,
+                surveyTitle: item.survey.title,
+                submittedAt: item.submission.submitted_at
+            };
 
-    return transformedSubmissions;
-}
+            transformedSubmissions.push(transformedSubmission);
+        }
 
-// Function to transform submissions into the desired format
-public function transformSubmissions(AllSubmission[] allSubmissions) returns TransformedSubmission[] {
-    TransformedSubmission[] transformedSubmissions = [];
-
-    foreach var item in allSubmissions {
-        TransformedSubmission transformedSubmission = {
-            id: item.submission.id,
-            stakeholderId: item.submission.stakeholder_id,
-            surveyId: item.submission.survey_id,
-            stakeholderName: item.stakeholder.stakeholder_name,
-            surveyTitle: item.survey.title,
-            submittedAt: item.submission.submitted_at
-        };
-
-        transformedSubmissions.push(transformedSubmission);
+        return transformedSubmissions;
     }
 
-    return transformedSubmissions;
-}
+    resource function post share(http:Caller caller, http:Request req) returns error? {
+        json|error payload = req.getJsonPayload();
+        if (payload is json) {
+            // Extract survey title and selected stakeholder types from the payload
+            string surveyId = (check payload.surveyId).toString();
+            string surveyTitle = (check payload.surveyTitle).toString();
+            string user_email = (check payload.user_email).toString();
+            json[] selectedTypes = <json[]>(check payload.selectedTypes);
+
+            string stringResult = selectedTypes.toString();
+
+            // Convert the array to a string and remove the brackets
+            string formattedString = stringResult.toString().substring(1, stringResult.toString().length() - 1);
+
+            // Remove quotation marks manually
+            string finalString = "";
+            byte[] byteArray = string:toBytes(formattedString);
+            foreach byte b in byteArray {
+                if (b != 34) { // ASCII value of double quote is 34
+                    finalString += check string:fromBytes([b]);
+                }
+            }
+
+            // Fetch stakeholders based on types
+            Stakeholder[] stakeholders = check self.getStakeholdersByType(selectedTypes, user_email);
+
+            // Send the survey to the selected stakeholders
+            check self.sendSurveyToStakeholders(surveyTitle, stakeholders, surveyId);
+
+            // Send a response back to the frontend
+            json response = {
+                message: "Survey shared successfully with " + stakeholders.length().toString() + " stakeholders."
+            };
+            check caller->respond(response);
+        } else {
+            check caller->respond({message: "Invalid payload"});
+        }
+    }
+
+    // Function to fetch stakeholders by type
+    function getStakeholdersByType(json[] types, string user_email) returns Stakeholder[]|error {
+        Stakeholder[] stakeholders = [];
+
+        // Iterate over each element in the json array
+        foreach var typ in types {
+            // Ensure the element is a string before processing
+            if (typ is string) {
+                // Prepare SQL query to fetch stakeholders by types
+                sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE 
+    stakeholder_type IN (SELECT id FROM stakeholder_types WHERE type_name = ${typ.toString()}) 
+    AND user_email = ${user_email.toString()}`;
+
+                stream<Stakeholder, sql:Error?> resultStream = self.dbClient->query(query);
+                // Collect results from stream
+                check from Stakeholder stakeholder in resultStream
+                    do {
+                        stakeholders.push(stakeholder);
+                    };
+            } else {
+                io:println("Invalid type found in array");
+            }
+        }
+
+        return stakeholders;
+    }
+
+    // Function to send survey emails to stakeholders
+    function sendSurveyToStakeholders(string surveyTitle, Stakeholder[] stakeholders, string surveyId) returns error? {
+        EmailDetails[] emailList = [];
+        foreach Stakeholder stakeholder in stakeholders {
+
+            string generateSurveyLink = "http://localhost:3000/survey/view?stakeholderemail=" + stakeholder.email_address + "&surveyid=" + surveyId + "";
+
+            EmailDetails e = {recipient: stakeholder.email_address, subject: surveyTitle, bodyHtml: "<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content=width=device-width,initial-scale=1.0><style>body{font-family:Arial,sans-serif;background-color:#f4f4f4;margin:0;padding:20px}.email-container{background-color:#ffffff;padding:20px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);max-width:600px;margin:auto}h2{color:#333333}p{color:#555555}.survey-button{display:inline-block;background-color:#28a745;color:#ffffff;padding:12px 20px;border-radius:5px;text-decoration:none;font-weight:bold}.survey-button:hover{background-color:#218838}</style><title>New Survey Available</title></head><body><div class=email-container><h2>New Survey Available</h2><p>Hello,</p><p>We are excited to inform you that a new survey is now available for you to participate in.</p><p>Please click the button below to access the survey:</p><a href='" + generateSurveyLink + "' class=survey-button>Take the Survey</a><p>Thank you for your time and feedback!</p></div></body></html>"};
+            emailList.push(e);
+
+        }
+
+        // Send each email
+        foreach EmailDetails email in emailList {
+            // Send email and capture any error
+            error? result = sendEmailSetOfStakeholders(email);
+            if (result is error) {
+                io:println("Failed to send email to ", email.recipient, ": ", result.message());
+            } else {
+                io:println("Email sent successfully to ", email.recipient);
+            }
+        }
+    }
 
 }
