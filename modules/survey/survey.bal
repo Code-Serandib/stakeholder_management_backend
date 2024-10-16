@@ -12,9 +12,9 @@ public function getNewSurvey(http:Caller caller, http:Request req, sql:Client db
     sql:ExecutionResult _ = check dbClient->execute(`INSERT INTO surveys (title, description,user_email) VALUES (${title}, ${description},${user_email})`);
 
     check caller->respond({
-            statusCode: 200,
-            message: "Survey created successfully"
-        });
+        statusCode: 200,
+        message: "Survey created successfully"
+    });
 
     return;
 }
@@ -30,9 +30,9 @@ public function getUpdateSurvey(http:Caller caller, http:Request req, sql:Client
         WHERE id=${id}`);
 
     check caller->respond({
-            statusCode: 204,
-            message: "Survey updated successfully"
-        });
+        statusCode: 204,
+        message: "Survey updated successfully"
+    });
 
     return;
 }
@@ -135,9 +135,9 @@ public function putUpdateQuestion(http:Caller caller, http:Request req, sql:Clie
     }
 
     check caller->respond({
-            statusCode: 204,
-            message: "Question updated successfully"
-        });
+        statusCode: 204,
+        message: "Question updated successfully"
+    });
 
     return;
 }
@@ -152,9 +152,9 @@ public function getAllQuestion(string user_email, sql:Client dbClient) returns T
             Choice[] choicesByQuestionId = check getChoicesByQuestionId(question.id, dbClient);
 
             AllQuestion allQuestion = {
-                    question: question,
-                    choices: choicesByQuestionId
-                };
+                question: question,
+                choices: choicesByQuestionId
+            };
             allQuestions.push(allQuestion);
         };
     check resultStream.close();
@@ -199,11 +199,11 @@ public function getAllResponses(sql:Client dbClient) returns TransformedResponse
 
             if (stakeholder is stakeholder_management:Stakeholder && survey is Survey && question is Question) {
                 AllResponse allResponse = {
-                        response: response,
-                        stakeholder: stakeholder,
-                        survey: survey,
-                        question: question
-                    };
+                    response: response,
+                    stakeholder: stakeholder,
+                    survey: survey,
+                    question: question
+                };
 
                 allResponses.push(allResponse);
             }
@@ -234,10 +234,10 @@ public function getAllSubmissions(sql:Client dbClient) returns TransformedSubmis
 
         if (stakeholder is stakeholder_management:Stakeholder && survey is Survey) {
             AllSubmission allSubmission = {
-                    submission: submission,
-                    stakeholder: stakeholder,
-                    survey: survey
-                };
+                submission: submission,
+                stakeholder: stakeholder,
+                survey: survey
+            };
             allSubmissions.push(allSubmission);
         }
         nextSubmission = check resultStream.next();
@@ -254,9 +254,9 @@ public function getCheckStakeholder(http:Caller caller, http:Request req, sql:Cl
 
     if stakeholderEmail is () || surveyId is () {
         check caller->respond({
-                statusCode: http:STATUS_BAD_REQUEST,
-                message: "Missing stakeholder email or survey ID"
-            });
+            statusCode: http:STATUS_BAD_REQUEST,
+            message: "Missing stakeholder email or survey ID"
+        });
         return;
     }
 
@@ -265,9 +265,9 @@ public function getCheckStakeholder(http:Caller caller, http:Request req, sql:Cl
 
     if stakeholderId is () {
         check caller->respond({
-                statusCode: http:STATUS_BAD_REQUEST,
-                message: "Stakeholder not found"
-            });
+            statusCode: http:STATUS_BAD_REQUEST,
+            message: "Stakeholder not found"
+        });
         return;
     }
 
@@ -280,18 +280,18 @@ public function getCheckStakeholder(http:Caller caller, http:Request req, sql:Cl
     if result is error {
         // io:println(result);
         check caller->respond({
-                statusCode: http:STATUS_INTERNAL_SERVER_ERROR,
-                message: "Database query failed"
-            });
+            statusCode: http:STATUS_INTERNAL_SERVER_ERROR,
+            message: "Database query failed"
+        });
         return;
     }
 
     if result is () || result.value.count == 0 {
         // io:println(result);
         check caller->respond({
-                statusCode: http:STATUS_FORBIDDEN,
-                message: "Invalid stakeholder or survey, or you already submitted"
-            });
+            statusCode: http:STATUS_FORBIDDEN,
+            message: "Invalid stakeholder or survey, or you already submitted"
+        });
         return;
     }
 
@@ -300,44 +300,137 @@ public function getCheckStakeholder(http:Caller caller, http:Request req, sql:Cl
 }
 
 public function postSubmitSurvey(http:Caller caller, http:Request req, sql:Client dbClient) returns error? {
-        json requestBody = check req.getJsonPayload();
-        string stakeholderEmail = (check requestBody.stakeholderEmail).toString();
-        int surveyId = <int>check requestBody.surveyId;
-        json responses = check requestBody.responses;
+    json requestBody = check req.getJsonPayload();
+    string stakeholderEmail = (check requestBody.stakeholderEmail).toString();
+    int surveyId = <int>check requestBody.surveyId;
+    json responses = check requestBody.responses;
 
-        sql:ParameterizedQuery parameterizedQuery = getStakeholderIdParameterizedQuery(stakeholderEmail);
-        int? stakeholderId = check dbClient->queryRow(parameterizedQuery);
+    sql:ParameterizedQuery parameterizedQuery = getStakeholderIdParameterizedQuery(stakeholderEmail);
+    int? stakeholderId = check dbClient->queryRow(parameterizedQuery);
 
-        if stakeholderId is () {
-            http:Response res = new;
-            res.statusCode = 404;
-            res.setPayload({message: "Stakeholder not found for email: " + stakeholderEmail});
-            check caller->respond(res);
-            return;
-        }
+    if stakeholderId is () {
+        http:Response res = new;
+        res.statusCode = 404;
+        res.setPayload({message: "Stakeholder not found for email: " + stakeholderEmail});
+        check caller->respond(res);
+        return;
+    }
 
-        sql:ParameterizedQuery surveySubmissionParameterizedQueryResult = surveySubmissionParameterizedQuery(stakeholderId, surveyId);
-        _ = check dbClient->execute(surveySubmissionParameterizedQueryResult);
+    sql:ParameterizedQuery surveySubmissionParameterizedQueryResult = surveySubmissionParameterizedQuery(stakeholderId, surveyId);
+    _ = check dbClient->execute(surveySubmissionParameterizedQueryResult);
 
-        if responses is map<anydata> {
-            foreach var [questionIdStr, response] in responses.entries() {
-                int qId = check 'int:fromString(questionIdStr);
+    if responses is map<anydata> {
+        foreach var [questionIdStr, response] in responses.entries() {
+            int qId = check 'int:fromString(questionIdStr);
 
-                if response is json[] {
-                    foreach var choice in response {
-                        string choiceValue = choice.toString();
-                        sql:ParameterizedQuery parameterizedQueryResult = submitResponseParameterizedQuery(stakeholderId, surveyId, qId, choiceValue);
-                        _ = check dbClient->execute(parameterizedQueryResult);
-                    }
-                } else {
-                    string responseValue = response.toString();
-                    sql:ParameterizedQuery parameterizedQueryResult = submitResponseParameterizedQuery(stakeholderId, surveyId, qId, responseValue);
+            if response is json[] {
+                foreach var choice in response {
+                    string choiceValue = choice.toString();
+                    sql:ParameterizedQuery parameterizedQueryResult = submitResponseParameterizedQuery(stakeholderId, surveyId, qId, choiceValue);
                     _ = check dbClient->execute(parameterizedQueryResult);
                 }
+            } else {
+                string responseValue = response.toString();
+                sql:ParameterizedQuery parameterizedQueryResult = submitResponseParameterizedQuery(stakeholderId, surveyId, qId, responseValue);
+                _ = check dbClient->execute(parameterizedQueryResult);
+            }
+        }
+    }
+
+    http:Response res = new;
+    res.setPayload({message: "Survey responses submitted successfully"});
+    check caller->respond(res);
+}
+
+
+public function postShare(http:Caller caller, http:Request req, sql:Client dbClient) returns error? {
+    json|error payload = req.getJsonPayload();
+
+    if (payload is json) {
+        // Extract survey title and selected stakeholder types from the payload
+        string surveyId = (check payload.surveyId).toString();
+        string surveyTitle = (check payload.surveyTitle).toString();
+        string user_email = (check payload.user_email).toString();
+        json[] selectedTypes = <json[]>(check payload.selectedTypes);
+
+        string stringResult = selectedTypes.toString();
+
+        // Convert the array to a string and remove the brackets
+        string formattedString = stringResult.toString().substring(1, stringResult.toString().length() - 1);
+
+        // Remove quotation marks manually
+        string finalString = "";
+        byte[] byteArray = string:toBytes(formattedString);
+        foreach byte b in byteArray {
+            if (b != 34) { // ASCII value of double quote is 34
+                finalString += check string:fromBytes([b]);
             }
         }
 
-        http:Response res = new;
-        res.setPayload({message: "Survey responses submitted successfully"});
-        check caller->respond(res);
+        // Fetch stakeholders based on types
+        stakeholder_management:Stakeholder[] stakeholders = check getStakeholdersByType(selectedTypes, user_email, dbClient);
+
+        // Send the survey to the selected stakeholders
+        check sendSurveyToStakeholders(surveyTitle, stakeholders, surveyId);
+
+        // Send a response back to the frontend
+        json response = {
+            message: "Survey shared successfully with " + stakeholders.length().toString() + " stakeholders."
+        };
+        check caller->respond(response);
+    } else {
+        check caller->respond({message: "Invalid payload"});
     }
+
+}
+
+// Function to fetch stakeholders by type
+public function getStakeholdersByType(json[] types, string user_email, sql:Client dbClient) returns stakeholder_management:Stakeholder[]|error {
+    stakeholder_management:Stakeholder[] stakeholders = [];
+
+    // Iterate over each element in the json array
+    foreach var typ in types {
+        // Ensure the element is a string before processing
+        if (typ is string) {
+            // Prepare SQL query to fetch stakeholders by types
+            sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE 
+    stakeholder_type IN (SELECT id FROM stakeholder_types WHERE type_name = ${typ.toString()}) 
+    AND user_email = ${user_email.toString()}`;
+
+            stream<stakeholder_management:Stakeholder, sql:Error?> resultStream = dbClient->query(query);
+            // Collect results from stream
+            check from stakeholder_management:Stakeholder stakeholder in resultStream
+                do {
+                    stakeholders.push(stakeholder);
+                };
+        } else {
+            // io:println("Invalid type found in array");
+        }
+    }
+
+    return stakeholders;
+}
+
+// Function to send survey emails to stakeholders
+public function sendSurveyToStakeholders(string surveyTitle, stakeholder_management:Stakeholder[] stakeholders, string surveyId) returns error? {
+    EmailDetails[] emailList = [];
+    foreach stakeholder_management:Stakeholder stakeholder in stakeholders {
+
+        string generateSurveyLink = "http://localhost:3000/survey/view?stakeholderemail=" + stakeholder.email_address + "&surveyid=" + surveyId + "";
+
+        EmailDetails e = {recipient: stakeholder.email_address, subject: surveyTitle, bodyHtml: "<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content=width=device-width,initial-scale=1.0><style>body{font-family:Arial,sans-serif;background-color:#f4f4f4;margin:0;padding:20px}.email-container{background-color:#ffffff;padding:20px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);max-width:600px;margin:auto}h2{color:#333333}p{color:#555555}.survey-button{display:inline-block;background-color:#28a745;color:#ffffff;padding:12px 20px;border-radius:5px;text-decoration:none;font-weight:bold}.survey-button:hover{background-color:#218838}</style><title>New Survey Available</title></head><body><div class=email-container><h2>New Survey Available</h2><p>Hello,</p><p>We are excited to inform you that a new survey is now available for you to participate in.</p><p>Please click the button below to access the survey:</p><a href='" + generateSurveyLink + "' class=survey-button>Take the Survey</a><p>Thank you for your time and feedback!</p></div></body></html>"};
+        emailList.push(e);
+
+    }
+
+    // Send each email
+    foreach EmailDetails email in emailList {
+        // Send email and capture any error
+        error? result = sendEmailSetOfStakeholders(email);
+        if (result is error) {
+            // io:println("Failed to send email to ", email.recipient, ": ", result.message());
+        } else {
+            // io:println("Email sent successfully to ", email.recipient);
+        }
+    }
+}
