@@ -363,6 +363,11 @@ service /api on new http:Listener(9091) {
     resource function post share(http:Caller caller, http:Request req) returns error? {
         return survey:postShare(caller, req, self.dbClient);
     }
+
+    // survey chart part
+    resource function get allSubmissionsBySurveyId(string surveyId) returns survey:SubmissionCount[]|error {
+        return survey:getAllSubmissionsBySurveyId(surveyId,self.dbClient);
+    }
     // ************************************ Survey Mnagement *************************************
     // ******************************************* END *******************************************
 
