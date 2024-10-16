@@ -94,6 +94,12 @@ type Submission record {
     string submitted_at;
 };
 
+type SubmissionCount record {
+    string count;
+    string submitted_at;
+};
+
+
 type AllSubmission record {
     Submission submission;
     Stakeholder stakeholder;

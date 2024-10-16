@@ -1050,6 +1050,35 @@ resource function get allSubmissions() returns TransformedSubmission[]|error {
         return transformedSubmissions;
     }
 
+    resource function get allSubmissionsBySurveyId(string surveyId) returns SubmissionCount[]|error {
+    SubmissionCount[] submissions = [];
+
+
+    // Query to get all submissions
+    sql:ParameterizedQuery query = `SELECT COUNT(*) AS count, DATE(submitted_at) AS submitted_at FROM survey_submissions WHERE survey_id= ${surveyId} GROUP BY DATE(submitted_at)`;
+    stream<SubmissionCount, sql:Error?> resultStream = self.dbClient->query(query);
+
+    // Iterate over the stream to fetch each submission
+    record {| SubmissionCount value; |}? nextSubmission = check resultStream.next();
+    
+    while nextSubmission is record {| SubmissionCount value; |} {
+        SubmissionCount submission = nextSubmission.value;
+
+                // Push the submission and its related data to the final list
+                submissions.push(submission);
+
+            // Fetch the next submission in the stream
+            nextSubmission = check resultStream.next();
+        }
+
+        // Close the result stream for submissions
+        check resultStream.close();
+
+        io:println(submissions);
+
+        return submissions;
+    }
+
     // Function to transform submissions into the desired format
     public function transformSubmissions(AllSubmission[] allSubmissions) returns TransformedSubmission[] {
         TransformedSubmission[] transformedSubmissions = [];
