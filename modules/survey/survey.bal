@@ -346,18 +346,14 @@ public function postShare(http:Caller caller, http:Request req, sql:Client dbCli
     json|error payload = req.getJsonPayload();
 
     if (payload is json) {
-        // Extract survey title and selected stakeholder types from the payload
         string surveyId = (check payload.surveyId).toString();
         string surveyTitle = (check payload.surveyTitle).toString();
         string user_email = (check payload.user_email).toString();
         json[] selectedTypes = <json[]>(check payload.selectedTypes);
 
         string stringResult = selectedTypes.toString();
-
-        // Convert the array to a string and remove the brackets
         string formattedString = stringResult.toString().substring(1, stringResult.toString().length() - 1);
 
-        // Remove quotation marks manually
         string finalString = "";
         byte[] byteArray = string:toBytes(formattedString);
         foreach byte b in byteArray {
@@ -366,13 +362,9 @@ public function postShare(http:Caller caller, http:Request req, sql:Client dbCli
             }
         }
 
-        // Fetch stakeholders based on types
         stakeholder_management:Stakeholder[] stakeholders = check getStakeholdersByType(selectedTypes, user_email, dbClient);
-
-        // Send the survey to the selected stakeholders
         check sendSurveyToStakeholders(surveyTitle, stakeholders, surveyId);
 
-        // Send a response back to the frontend
         json response = {
             message: "Survey shared successfully with " + stakeholders.length().toString() + " stakeholders."
         };
@@ -387,23 +379,17 @@ public function postShare(http:Caller caller, http:Request req, sql:Client dbCli
 public function getStakeholdersByType(json[] types, string user_email, sql:Client dbClient) returns stakeholder_management:Stakeholder[]|error {
     stakeholder_management:Stakeholder[] stakeholders = [];
 
-    // Iterate over each element in the json array
     foreach var typ in types {
-        // Ensure the element is a string before processing
         if (typ is string) {
-            // Prepare SQL query to fetch stakeholders by types
             sql:ParameterizedQuery query = `SELECT * FROM stakeholders WHERE 
     stakeholder_type IN (SELECT id FROM stakeholder_types WHERE type_name = ${typ.toString()}) 
     AND user_email = ${user_email.toString()}`;
 
             stream<stakeholder_management:Stakeholder, sql:Error?> resultStream = dbClient->query(query);
-            // Collect results from stream
             check from stakeholder_management:Stakeholder stakeholder in resultStream
                 do {
                     stakeholders.push(stakeholder);
                 };
-        } else {
-            // io:println("Invalid type found in array");
         }
     }
 
@@ -422,9 +408,7 @@ public function sendSurveyToStakeholders(string surveyTitle, stakeholder_managem
 
     }
 
-    // Send each email
     foreach EmailDetails email in emailList {
-        // Send email and capture any error
         error? result = sendEmailSetOfStakeholders(email);
         if (result is error) {
             // io:println("Failed to send email to ", email.recipient, ": ", result.message());
@@ -434,32 +418,20 @@ public function sendSurveyToStakeholders(string surveyTitle, stakeholder_managem
     }
 }
 
-
-public  function getAllSubmissionsBySurveyId(string surveyId, sql:Client dbClient) returns SubmissionCount[]|error {
+public function getAllSubmissionsBySurveyId(string surveyId, sql:Client dbClient) returns SubmissionCount[]|error {
     SubmissionCount[] submissions = [];
 
-
-    // Query to get all submissions
     sql:ParameterizedQuery query = `SELECT COUNT(*) AS count, DATE(submitted_at) AS submitted_at FROM survey_submissions WHERE survey_id= ${surveyId} GROUP BY DATE(submitted_at)`;
     stream<SubmissionCount, sql:Error?> resultStream = dbClient->query(query);
 
-    // Iterate over the stream to fetch each submission
-    record {| SubmissionCount value; |}? nextSubmission = check resultStream.next();
-    
-    while nextSubmission is record {| SubmissionCount value; |} {
+    record {|SubmissionCount value;|}? nextSubmission = check resultStream.next();
+
+    while nextSubmission is record {|SubmissionCount value;|} {
         SubmissionCount submission = nextSubmission.value;
-
-                // Push the submission and its related data to the final list
-                submissions.push(submission);
-
-            // Fetch the next submission in the stream
-            nextSubmission = check resultStream.next();
-        }
-
-        // Close the result stream for submissions
-        check resultStream.close();
-
-        // io:println(submissions);
-
-        return submissions;
+        submissions.push(submission);
+        nextSubmission = check resultStream.next();
     }
+    check resultStream.close();
+
+    return submissions;
+}
